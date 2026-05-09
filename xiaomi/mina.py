@@ -203,7 +203,11 @@ class MiNAClient:
                 return None
 
             data = resp.json()
-            records = data.get("data", {}).get("records", [])
+            inner = data.get("data", {})
+            if isinstance(inner, str):
+                records = []
+            else:
+                records = inner.get("records", [])
             if not records:
                 return None
 

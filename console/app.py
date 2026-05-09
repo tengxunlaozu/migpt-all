@@ -1,7 +1,7 @@
 """Web 控制台
 
 提供浏览器界面：
-- 登录小米账号
+- 手动配置 passToken/userId/deviceId
 - 选择设备
 - 查看状态/对话记录
 - 切换模式
@@ -14,17 +14,14 @@ import asyncio
 import json
 import logging
 import os
-import time
 from typing import Optional
 
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 logger = logging.getLogger("console")
 
-# 这些在 main.py 中设置
 _app_state: dict = {}
 
 
@@ -41,12 +38,11 @@ templates = Jinja2Templates(directory=templates_dir)
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 
 @app.get("/api/status")
 async def api_status():
-    """获取当前状态"""
     state = _app_state
     poller = state.get("poller")
     result = {
@@ -66,45 +62,68 @@ async def api_status():
     return result
 
 
-@app.post("/api/login")
-async def api_login(
-    account: str = Form(...),
-    password: str = Form(...),
-):
-    """登录小米账号"""
+@app.post("/api/save-credentials")
+async def api_save_credentials(request: Request):
+    """保存 passToken/userId/deviceId 并获取 serviceToken"""
+    body = await request.json()
+    user_id = body.get("user_id", "").strip()
+    pass_token = body.get("pass_token", "").strip()
+    device_id = body.get("device_id", "").strip()
+
+    if not user_id or not pass_token:
+        return JSONResponse(
+            {"ok": False, "error": "user_id 和 pass_token 必填"}, status_code=400
+        )
+
     state = _app_state
     try:
-        auth = state.get("auth")
-        if not auth:
-            return JSONResponse({"ok": False, "error": "auth client 未初始化"}, status_code=500)
+        from xiaomi.auth_portal import AuthPortal
+        from xiaomi.models import XiaomiTokenStore
 
+        state_dir = state["config"].token_store_path.rsplit("/", 1)[0]
+        portal = AuthPortal(state_dir)
         loop = asyncio.get_event_loop()
-        store = await loop.run_in_executor(
-            None, lambda: auth.login(account, password)
-        )
-        state["store"] = store
 
-        # 保存 token
+        result = await loop.run_in_executor(
+            None, lambda: portal.full_login(user_id, pass_token, device_id)
+        )
+        portal.close()
+
+        if not result.get("micoapi_service_token"):
+            return JSONResponse(
+                {"ok": False, "error": "获取 micoapi serviceToken 失败，请检查 passToken 是否正确"},
+                status_code=400,
+            )
+
+        store = XiaomiTokenStore(
+            user_id=result["user_id"],
+            pass_token=result["pass_token"],
+            device_id=result["device_id"],
+            micoapi_ssecurity=result["micoapi_ssecurity"],
+            micoapi_service_token=result["micoapi_service_token"],
+            xiaomiio_ssecurity=result["xiaomiio_ssecurity"],
+            xiaomiio_service_token=result["xiaomiio_service_token"],
+        )
+
+        state["store"] = store
         state["save_token"](store)
+
+        # 重建 MiNA 客户端
+        from xiaomi.mina import MiNAClient
+        from xiaomi.miio import MiIOClient
+        auth = state["auth"]
+        state["mina"] = MiNAClient(auth, store)
+        state["miio"] = MiIOClient(auth, store, state["config"].server_country)
 
         return {"ok": True, "user_id": store.user_id}
 
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
-
-
-@app.post("/api/logout")
-async def api_logout():
-    """登出"""
-    state = _app_state
-    state["store"] = None
-    state["device"] = None
-    return {"ok": True}
+        logger.error(f"保存凭证失败: {e}")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 @app.get("/api/devices")
 async def api_devices():
-    """获取设备列表"""
     state = _app_state
     store = state.get("store")
     if not store or not store.is_valid():
@@ -138,7 +157,6 @@ async def api_devices():
 
 @app.post("/api/select_device")
 async def api_select_device(request: Request):
-    """选择设备"""
     state = _app_state
     body = await request.json()
     device_id = body.get("device_id", "")
@@ -161,8 +179,6 @@ async def api_select_device(request: Request):
             return JSONResponse({"ok": False, "error": f"找不到设备 {device_id}"}, status_code=404)
 
         state["device"] = selected
-
-        # 保存配置
         state["save_device"](selected)
 
         return {"ok": True, "device": {"name": selected.name, "hardware": selected.hardware}}
@@ -173,7 +189,6 @@ async def api_select_device(request: Request):
 
 @app.post("/api/start")
 async def api_start():
-    """启动轮询"""
     state = _app_state
     poller = state.get("poller")
     if not poller:
@@ -183,10 +198,7 @@ async def api_start():
         return JSONResponse({"ok": False, "error": "请先选择设备"}, status_code=400)
 
     try:
-        # 初始化 poller
         device = state["device"]
-
-        # 探测 MIoT DID
         miio = state.get("miio")
         miot_did = device.miot_did
         if not miot_did and miio:
@@ -220,7 +232,6 @@ async def api_start():
 
 @app.post("/api/stop")
 async def api_stop():
-    """停止轮询"""
     state = _app_state
     poller = state.get("poller")
     if poller:
@@ -230,7 +241,6 @@ async def api_stop():
 
 @app.post("/api/mode")
 async def api_mode(request: Request):
-    """切换模式"""
     body = await request.json()
     mode = body.get("mode", "")
     state = _app_state
@@ -248,7 +258,6 @@ async def api_mode(request: Request):
 
 @app.post("/api/speak")
 async def api_speak(request: Request):
-    """主动播报"""
     body = await request.json()
     text = body.get("text", "")
     if not text:
@@ -263,7 +272,6 @@ async def api_speak(request: Request):
 
 @app.post("/api/execute")
 async def api_execute(request: Request):
-    """执行指令"""
     body = await request.json()
     text = body.get("text", "")
     state = _app_state
@@ -275,7 +283,6 @@ async def api_execute(request: Request):
 
 @app.post("/api/volume")
 async def api_volume(request: Request):
-    """设置音量"""
     body = await request.json()
     volume = body.get("volume", 50)
     state = _app_state
@@ -287,7 +294,6 @@ async def api_volume(request: Request):
 
 @app.post("/api/reset_session")
 async def api_reset_session():
-    """重置语音会话"""
     state = _app_state
     poller = state.get("poller")
     if poller:
@@ -295,11 +301,19 @@ async def api_reset_session():
     return {"ok": True}
 
 
+@app.post("/api/logout")
+async def api_logout():
+    state = _app_state
+    state["store"] = None
+    state["device"] = None
+    return {"ok": True}
+
+
 @app.get("/api/debug_log")
 async def api_debug_log(lines: int = 100):
-    """获取调试日志"""
     state = _app_state
-    log_path = state.get("config", {}).get("debug_log_path", "")
+    cfg = state.get("config")
+    log_path = getattr(cfg, "debug_log_path", "") if cfg else ""
     if not log_path or not os.path.exists(log_path):
         return {"ok": True, "lines": []}
 

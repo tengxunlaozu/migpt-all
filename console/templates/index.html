@@ -3,281 +3,179 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>小爱 - Hermes 桥接控制台</title>
+<title>小爱-Hermes 桥接控制台</title>
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#0d1117; color:#c9d1d9; min-height:100vh; }
-.container { max-width:720px; margin:0 auto; padding:20px; }
-h1 { color:#58a6ff; font-size:24px; margin-bottom:20px; text-align:center; }
-.card { background:#161b22; border:1px solid #30363d; border-radius:12px; padding:20px; margin-bottom:16px; }
-.card h2 { color:#58a6ff; font-size:16px; margin-bottom:12px; }
-.status-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
-.status-dot.on { background:#3fb950; }
-.status-dot.off { background:#f85149; }
-.status-dot.idle { background:#d29922; }
-label { display:block; color:#8b949e; font-size:13px; margin-bottom:4px; }
-input[type=text], input[type=password], input[type=number], select, textarea {
-  width:100%; padding:8px 12px; background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#c9d1d9; font-size:14px; margin-bottom:12px;
-}
-input:focus, textarea:focus { border-color:#58a6ff; outline:none; }
-button { padding:8px 16px; border:1px solid #30363d; border-radius:6px; background:#21262d; color:#c9d1d9; font-size:14px; cursor:pointer; }
-button:hover { background:#30363d; }
-button.primary { background:#238636; border-color:#238636; color:#fff; }
-button.primary:hover { background:#2ea043; }
-button.danger { background:#da3633; border-color:#da3633; color:#fff; }
-button.danger:hover { background:#f85149; }
-button:disabled { opacity:0.5; cursor:not-allowed; }
-.row { display:flex; gap:12px; align-items:flex-end; }
-.row > * { flex:1; }
-.mt { margin-top:12px; }
-.device-list { list-style:none; }
-.device-list li { padding:10px 12px; border:1px solid #30363d; border-radius:8px; margin-bottom:8px; cursor:pointer; transition:all 0.15s; }
-.device-list li:hover { border-color:#58a6ff; background:#1c2333; }
-.device-list li.selected { border-color:#238636; background:#1a2e1a; }
-.device-name { color:#c9d1d9; font-weight:600; }
-.device-info { color:#8b949e; font-size:12px; margin-top:2px; }
-.log-box { background:#0d1117; border:1px solid #30363d; border-radius:6px; padding:12px; font-family:"JetBrains Mono",monospace; font-size:12px; max-height:300px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; }
-.info-grid { display:grid; grid-template-columns:120px 1fr; gap:4px 12px; font-size:13px; }
-.info-grid dt { color:#8b949e; }
-.info-grid dd { color:#c9d1d9; }
-.hidden { display:none; }
-#notification { position:fixed; top:20px; right:20px; padding:12px 20px; border-radius:8px; font-size:14px; z-index:1000; transition:opacity 0.3s; }
-#notification.success { background:#238636; color:#fff; }
-#notification.error { background:#da3633; color:#fff; }
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh}
+.ctn{max-width:720px;margin:0 auto;padding:20px}
+h1{color:#58a6ff;font-size:22px;margin-bottom:16px;text-align:center}
+.card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:18px;margin-bottom:14px}
+.card h2{color:#58a6ff;font-size:15px;margin-bottom:10px}
+label{display:block;color:#8b949e;font-size:12px;margin:8px 0 3px}
+input,textarea,select{width:100%;padding:7px 10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:13px}
+input:focus,textarea:focus{border-color:#58a6ff;outline:none}
+textarea{height:50px;font-family:monospace;font-size:11px;resize:vertical}
+button{padding:7px 14px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#c9d1d9;font-size:13px;cursor:pointer}
+button:hover{background:#30363d}
+button.p{background:#238636;border-color:#238636;color:#fff}
+button.p:hover{background:#2ea043}
+button.d{background:#da3633;border-color:#da3633;color:#fff}
+button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:8px;align-items:flex-end}
+.row>*{flex:1}
+.mt{margin-top:10px}
+.dlist{list-style:none}
+.dlist li{padding:8px 10px;border:1px solid #30363d;border-radius:8px;margin-bottom:6px;cursor:pointer}
+.dlist li:hover{border-color:#58a6ff;background:#1c2333}
+.dlist li.sel{border-color:#238636;background:#1a2e1a}
+.dn{color:#c9d1d9;font-weight:600;font-size:13px}
+.di{color:#8b949e;font-size:11px;margin-top:1px}
+.ig{display:grid;grid-template-columns:100px 1fr;gap:3px 10px;font-size:12px}
+.ig dt{color:#8b949e}
+.ig dd{color:#c9d1d9}
+.logbox{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;font-family:monospace;font-size:11px;max-height:250px;overflow-y:auto;white-space:pre-wrap}
+.hidden{display:none}
+#noti{position:fixed;top:16px;right:16px;padding:10px 16px;border-radius:8px;font-size:13px;z-index:999;opacity:0;transition:opacity .3s}
+#noti.s{background:#238636;color:#fff;opacity:1}
+#noti.e{background:#da3633;color:#fff;opacity:1}
+.help{color:#8b949e;font-size:11px;margin-top:4px;line-height:1.5}
+.help code{background:#1c2333;padding:1px 4px;border-radius:3px;color:#79c0ff;font-size:10px}
 </style>
 </head>
 <body>
-<div class="container">
-  <h1>🔗 小爱 ↔ Hermes 桥接控制台</h1>
+<div class="ctn">
+<h1>🔗 小爱 ↔ Hermes 桥接</h1>
 
-  <!-- 登录 -->
-  <div class="card" id="login-card">
-    <h2>📱 小米账号登录</h2>
-    <form id="login-form">
-      <label>小米账号</label>
-      <input type="text" id="account" placeholder="手机号/邮箱">
-      <label>密码</label>
-      <div class="row">
-        <input type="password" id="password" placeholder="密码">
-        <button type="submit" class="primary" id="login-btn">登录</button>
-      </div>
-    </form>
-  </div>
-
-  <!-- 设备选择 -->
-  <div class="card hidden" id="device-card">
-    <h2>🔊 选择音箱</h2>
-    <ul class="device-list" id="device-list"></ul>
-    <button class="primary mt" id="select-btn" disabled>选中此设备</button>
-  </div>
-
-  <!-- 状态 & 控制 -->
-  <div class="card hidden" id="control-card">
-    <h2>🎛️ 状态 & 控制</h2>
-    <dl class="info-grid">
-      <dt>设备</dt><dd id="info-device">-</dd>
-      <dt>模式</dt><dd id="info-mode">-</dd>
-      <dt>轮询</dt><dd id="info-polling">-</dd>
-      <dt>最近对话</dt><dd id="info-last">-</dd>
-      <dt>最后查询</dt><dd id="info-query">-</dd>
-      <dt>错误</dt><dd id="info-error" style="color:#f85149">-</dd>
-    </dl>
-    <div class="mt row">
-      <button class="primary" id="start-btn">▶ 启动</button>
-      <button class="danger" id="stop-btn">⏹ 停止</button>
-    </div>
-    <div class="mt row">
-      <button onclick="setMode('wake')">唤醒模式</button>
-      <button onclick="setMode('proxy')">代理模式</button>
-      <button onclick="setMode('silent')">静默模式</button>
-    </div>
-    <div class="mt row">
-      <input type="text" id="speak-text" placeholder="输入要说的话...">
-      <button onclick="speak()">🗣 播报</button>
-    </div>
-    <div class="mt row">
-      <input type="text" id="exec-text" placeholder="执行小爱指令...">
-      <button onclick="execute()">⚡ 执行</button>
-    </div>
-    <div class="mt row">
-      <input type="number" id="vol-text" min="0" max="100" placeholder="音量0-100">
-      <button onclick="setVolume()">🔊 音量</button>
-    </div>
-    <button class="mt" onclick="resetSession()">🔄 重置会话</button>
-    <button class="mt" onclick="logout()">🚪 登出</button>
-  </div>
-
-  <!-- 日志 -->
-  <div class="card hidden" id="log-card">
-    <h2>📋 调试日志</h2>
-    <div class="log-box" id="log-box">等待加载...</div>
-    <button class="mt" onclick="loadLog()">🔄 刷新日志</button>
-  </div>
+<!-- 登录 -->
+<div class="card" id="c-login">
+<h2>🔑 小米账号凭证</h2>
+<div class="help">
+步骤：打开 <a href="https://account.xiaomi.com/pass/serviceLogin?sid=micoapi" target="_blank" style="color:#58a6ff">小米登录页</a> → 登录 → F12 → Application → Cookies → account.xiaomi.com → 复制下面三个值
+</div>
+<label>userId（数字）</label>
+<input type="text" id="uid" placeholder="如 131679222">
+<label>passToken</label>
+<textarea id="ptoken" placeholder="V1:开头的长字符串"></textarea>
+<label>deviceId（可选）</label>
+<input type="text" id="devid" placeholder="留空自动生成">
+<div class="mt row">
+<button class="p" id="login-btn" onclick="saveCreds()">保存并登录</button>
+</div>
 </div>
 
-<div id="notification"></div>
+<!-- 设备 -->
+<div class="card hidden" id="c-device">
+<h2>🔊 选择音箱</h2>
+<ul class="dlist" id="dlist"></ul>
+<button class="p mt" id="sel-btn" disabled onclick="selDevice()">选中此设备</button>
+</div>
 
+<!-- 控制 -->
+<div class="card hidden" id="c-ctrl">
+<h2>🎛️ 控制</h2>
+<dl class="ig">
+<dt>设备</dt><dd id="i-dev">-</dd>
+<dt>模式</dt><dd id="i-mode">-</dd>
+<dt>轮询</dt><dd id="i-poll">-</dd>
+<dt>最近查询</dt><dd id="i-q">-</dd>
+<dt>错误</dt><dd id="i-err" style="color:#f85149">-</dd>
+</dl>
+<div class="mt row">
+<button class="p" onclick="api('POST','/api/start')">▶ 启动</button>
+<button class="d" onclick="api('POST','/api/stop')">⏹ 停止</button>
+</div>
+<div class="mt row">
+<button onclick="api('POST','/api/mode',{mode:'wake'})">唤醒</button>
+<button onclick="api('POST','/api/mode',{mode:'proxy'})">代理</button>
+<button onclick="api('POST','/api/mode',{mode:'silent'})">静默</button>
+</div>
+<div class="mt row">
+<input type="text" id="speak-t" placeholder="播报内容...">
+<button onclick="speak()">🗣 播报</button>
+</div>
+<div class="mt row">
+<input type="text" id="exec-t" placeholder="小爱指令...">
+<button onclick="exec()">⚡ 执行</button>
+</div>
+<div class="mt row">
+<input type="number" id="vol-t" min="0" max="100" placeholder="音量">
+<button onclick="vol()">🔊</button>
+</div>
+<button class="mt" onclick="api('POST','/api/reset_session')">🔄 重置会话</button>
+<button class="mt" onclick="api('POST','/api/logout').then(()=>location.reload())">🚪 登出</button>
+</div>
+
+<!-- 日志 -->
+<div class="card hidden" id="c-log">
+<h2>📋 日志</h2>
+<div class="logbox" id="logbox">-</div>
+<button class="mt" onclick="loadLog()">刷新</button>
+</div>
+</div>
+<div id="noti"></div>
 <script>
-const API = '';
-let refreshTimer;
+function noti(m,t){const e=document.getElementById('noti');e.textContent=m;e.className=t||'s';e.style.opacity='1';setTimeout(()=>e.style.opacity='0',3000)}
+async function api(m,p,b){const o={method:m,headers:{'Content-Type':'application/json'}};if(b)o.body=JSON.stringify(b);const r=await fetch(p,o);const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);return d}
 
-function notify(msg, type='success') {
-  const el = document.getElementById('notification');
-  el.textContent = msg;
-  el.className = type;
-  el.style.opacity = '1';
-  setTimeout(() => el.style.opacity = '0', 3000);
+async function saveCreds(){
+  const uid=document.getElementById('uid').value.trim();
+  const pt=document.getElementById('ptoken').value.trim();
+  const did=document.getElementById('devid').value.trim();
+  if(!uid||!pt){noti('userId和passToken必填','e');return}
+  document.getElementById('login-btn').disabled=true;
+  try{
+    await api('POST','/api/save-credentials',{user_id:uid,pass_token:pt,device_id:did});
+    noti('登录成功');refresh();
+  }catch(e){noti(e.message,'e');}
+  document.getElementById('login-btn').disabled=false;
 }
 
-async function api(method, path, body) {
-  const opts = { method, headers: {'Content-Type':'application/json'} };
-  if (body) opts.body = JSON.stringify(body);
-  const r = await fetch(API + path, opts);
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-  return data;
+async function refresh(){
+  try{
+    const s=await api('GET','/api/status');
+    document.getElementById('c-login').classList.toggle('hidden',s.authenticated);
+    document.getElementById('c-device').classList.toggle('hidden',!s.authenticated||s.device_selected);
+    document.getElementById('c-ctrl').classList.toggle('hidden',!s.device_selected);
+    document.getElementById('c-log').classList.toggle('hidden',!s.device_selected);
+    if(s.authenticated&&!s.device_selected)loadDevices();
+    if(s.device_selected)showInfo(s);
+  }catch(e){console.error(e);}
 }
 
-// 登录
-document.getElementById('login-form').onsubmit = async (e) => {
-  e.preventDefault();
-  const btn = document.getElementById('login-btn');
-  btn.disabled = true; btn.textContent = '登录中...';
-  try {
-    const fd = new FormData();
-    fd.append('account', document.getElementById('account').value);
-    fd.append('password', document.getElementById('password').value);
-    const r = await fetch(API+'/api/login', {method:'POST', body:fd});
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error);
-    notify('登录成功');
-    refreshStatus();
-  } catch(err) {
-    notify(err.message, 'error');
-  } finally {
-    btn.disabled = false; btn.textContent = '登录';
-  }
-};
-
-// 刷新状态
-async function refreshStatus() {
-  try {
-    const s = await api('GET', '/api/status');
-    document.getElementById('login-card').classList.toggle('hidden', s.authenticated);
-    document.getElementById('device-card').classList.toggle('hidden', !s.authenticated);
-    document.getElementById('control-card').classList.toggle('hidden', !s.device_selected);
-    document.getElementById('log-card').classList.toggle('hidden', !s.device_selected);
-
-    if (s.authenticated && !s.device_selected) loadDevices();
-    if (s.device_selected) updateInfo(s);
-  } catch(e) { console.error(e); }
-}
-
-// 加载设备列表
-async function loadDevices() {
-  try {
-    const data = await api('GET', '/api/devices');
-    const list = document.getElementById('device-list');
-    list.innerHTML = '';
-    data.devices.forEach(d => {
-      const li = document.createElement('li');
-      li.innerHTML = `<div class="device-name">${d.name || d.alias || d.device_id}</div>
-        <div class="device-info">${d.hardware} | ${d.model} | ${d.is_active ? '✅在线' : '❌离线'}</div>`;
-      li.onclick = () => {
-        list.querySelectorAll('li').forEach(x => x.classList.remove('selected'));
-        li.classList.add('selected');
-        document.getElementById('select-btn').disabled = false;
-        document.getElementById('select-btn').dataset.deviceId = d.device_id;
-      };
-      list.appendChild(li);
+async function loadDevices(){
+  try{
+    const d=await api('GET','/api/devices');
+    const l=document.getElementById('dlist');l.innerHTML='';
+    d.devices.forEach(x=>{
+      const li=document.createElement('li');
+      li.innerHTML=`<div class="dn">${x.name||x.alias||x.device_id}</div><div class="di">${x.hardware}|${x.model}|${x.is_active?'✅':'❌'}</div>`;
+      li.onclick=()=>{l.querySelectorAll('li').forEach(y=>y.classList.remove('sel'));li.classList.add('sel');document.getElementById('sel-btn').disabled=false;document.getElementById('sel-btn').dataset.id=x.device_id;};
+      l.appendChild(li);
     });
-  } catch(e) { notify(e.message, 'error'); }
+  }catch(e){noti(e.message,'e');}
 }
 
-// 选择设备
-document.getElementById('select-btn').onclick = async () => {
-  const id = document.getElementById('select-btn').dataset.deviceId;
-  if (!id) return;
-  try {
-    await api('POST', '/api/select_device', {device_id: id});
-    notify('设备已选择');
-    refreshStatus();
-  } catch(e) { notify(e.message, 'error'); }
-};
-
-function updateInfo(s) {
-  const p = s.poller_status || {};
-  document.getElementById('info-device').textContent = p.device ? `${p.device.name} (${p.device.hardware})` : '-';
-  document.getElementById('info-mode').textContent = p.mode || '-';
-  document.getElementById('info-polling').textContent = s.polling ? '🟢 运行中' : '🔴 已停止';
-  document.getElementById('info-last').textContent = p.last_conversation_at || '-';
-  document.getElementById('info-query').textContent = p.last_conversation_query || '-';
-  document.getElementById('info-error').textContent = p.last_error || '-';
+async function selDevice(){
+  const id=document.getElementById('sel-btn').dataset.id;
+  if(!id)return;
+  try{await api('POST','/api/select_device',{device_id:id});noti('设备已选择');refresh();}catch(e){noti(e.message,'e');}
 }
 
-// 启动/停止
-document.getElementById('start-btn').onclick = async () => {
-  try { await api('POST', '/api/start'); notify('已启动'); refreshStatus(); }
-  catch(e) { notify(e.message, 'error'); }
-};
-document.getElementById('stop-btn').onclick = async () => {
-  try { await api('POST', '/api/stop'); notify('已停止'); refreshStatus(); }
-  catch(e) { notify(e.message, 'error'); }
-};
-
-// 模式切换
-async function setMode(mode) {
-  try { await api('POST', '/api/mode', {mode}); notify('模式: '+mode); refreshStatus(); }
-  catch(e) { notify(e.message, 'error'); }
+function showInfo(s){
+  const p=s.poller_status||{};
+  document.getElementById('i-dev').textContent=p.device?`${p.device.name}(${p.device.hardware})`:'-';
+  document.getElementById('i-mode').textContent=p.mode||'-';
+  document.getElementById('i-poll').textContent=s.polling?'🟢':'🔴';
+  document.getElementById('i-q').textContent=p.last_conversation_query||'-';
+  document.getElementById('i-err').textContent=p.last_error||'-';
 }
 
-// 播报
-async function speak() {
-  const text = document.getElementById('speak-text').value;
-  if (!text) return;
-  try { await api('POST', '/api/speak', {text}); document.getElementById('speak-text').value=''; }
-  catch(e) { notify(e.message, 'error'); }
-}
+async function speak(){const t=document.getElementById('speak-t').value;if(!t)return;try{await api('POST','/api/speak',{text:t});document.getElementById('speak-t').value='';}catch(e){noti(e.message,'e');}}
+async function exec(){const t=document.getElementById('exec-t').value;if(!t)return;try{await api('POST','/api/execute',{text:t});document.getElementById('exec-t').value='';}catch(e){noti(e.message,'e');}}
+async function vol(){const v=document.getElementById('vol-t').value;if(!v)return;try{await api('POST','/api/volume',{volume:parseInt(v)});}catch(e){noti(e.message,'e');}}
+async function loadLog(){try{const d=await api('GET','/api/debug_log');document.getElementById('logbox').textContent=(d.lines||[]).join('');}catch(e){document.getElementById('logbox').textContent='err:'+e.message;}}
 
-// 执行
-async function execute() {
-  const text = document.getElementById('exec-text').value;
-  if (!text) return;
-  try { await api('POST', '/api/execute', {text}); document.getElementById('exec-text').value=''; }
-  catch(e) { notify(e.message, 'error'); }
-}
-
-// 音量
-async function setVolume() {
-  const v = document.getElementById('vol-text').value;
-  if (!v) return;
-  try { await api('POST', '/api/volume', {volume: parseInt(v)}); }
-  catch(e) { notify(e.message, 'error'); }
-}
-
-// 重置会话
-async function resetSession() {
-  try { await api('POST', '/api/reset_session'); notify('会话已重置'); }
-  catch(e) { notify(e.message, 'error'); }
-}
-
-// 登出
-async function logout() {
-  try { await api('POST', '/api/logout'); notify('已登出'); refreshStatus(); }
-  catch(e) { notify(e.message, 'error'); }
-}
-
-// 日志
-async function loadLog() {
-  try {
-    const data = await api('GET', '/api/debug_log');
-    document.getElementById('log-box').textContent = (data.lines||[]).join('');
-  } catch(e) { document.getElementById('log-box').textContent = '加载失败: '+e.message; }
-}
-
-// 自动刷新
-refreshStatus();
-refreshTimer = setInterval(refreshStatus, 3000);
+refresh();setInterval(refresh,3000);
 </script>
 </body>
 </html>

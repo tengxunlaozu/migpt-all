@@ -39,9 +39,9 @@ MINA_CONVERSATION_URL = "https://userprofile.mina.mi.com/device_profile/v2/conve
 XIAOMI_SID_LIST = ["micoapi", "xiaomiio"]
 
 
-def _hash_password(password: str, sign: str) -> str:
-    """对密码进行 SHA1 哈希"""
-    return hashlib.sha1(password.encode("utf-8")).hexdigest()
+def _hash_password(password: str) -> str:
+    """对密码进行 MD5 大写哈希"""
+    return hashlib.md5(password.encode("utf-8")).hexdigest().upper()
 
 
 def _random_device_id() -> str:
@@ -157,8 +157,8 @@ class XiaomiAuthClient:
         url = f"{ACCOUNT_BASE}/serviceLoginAuth2"
         sign = params.get("_sign", "")
         data = {
-            "account": account,
-            "password": _hash_password(password, sign),
+            "user": account,
+            "hash": _hash_password(password),
             "sid": sid,
             "_json": "true",
             "callback": params.get("callback", ""),
@@ -188,7 +188,7 @@ class XiaomiAuthClient:
                 state={"account": account, "password": password, "sid": sid, "params": params},
             )
 
-        if "location" not in result:
+        if not result.get("location"):
             desc = result.get("description", "未知错误")
             code = result.get("code", -1)
             raise XiaomiAuthError(f"登录失败 [{code}]: {desc}")
