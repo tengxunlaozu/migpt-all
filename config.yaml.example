@@ -1,0 +1,44 @@
+# 小爱-Hermes 桥接配置
+# 复制为 config.yaml 后修改
+
+# 小米账号（也可以通过环境变量 XIAOMI_ACCOUNT / XIAOMI_PASSWORD 设置）
+account: ""
+password: ""
+server_country: "cn"
+
+# 语音模式: wake(唤醒词), proxy(代理所有), silent(静默)
+mode: "wake"
+
+# 唤醒词正则表达式
+wake_word_pattern: "^(贾维斯| Jarvis)"
+
+# 对话窗口（秒）— 唤醒后持续监听的时间
+dialog_window_seconds: 30
+
+# Hermes API（OpenAI-compatible 端点）
+hermes_api_url: "http://127.0.0.1:9222"
+hermes_api_key: ""
+hermes_model: "mimo-v2.5"
+
+# 系统提示词
+hermes_system_prompt: |
+  你正在通过真实小爱音箱实时语音对话。目标是尽快口头回答。
+  回答尽量简短自然，像在和人说话一样。
+  不要输出markdown、代码块、工具回执或流程确认，只给用户真正需要听到的内容。
+
+# 轮询间隔（毫秒）
+poll_interval_ms: 1000
+
+# 语音上下文
+voice_context_max_turns: 6
+voice_context_max_chars: 4000
+
+# Web 控制台
+console_host: "0.0.0.0"
+console_port: 8199
+
+# 音频公开地址（用于音箱访问服务器上的音频文件）
+audio_public_base_url: ""
+
+# 调试日志
+debug_log_enabled: true

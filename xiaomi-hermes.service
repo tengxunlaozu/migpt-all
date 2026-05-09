@@ -1,0 +1,19 @@
+[Unit]
+Description=XiaoAi Hermes Bridge
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/xiaomi-hermes-bridge
+ExecStart=/usr/bin/python3 /root/xiaomi-hermes-bridge/main.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+# 如果用环境变量配置：
+# Environment=XIAOMI_ACCOUNT=your_account
+# Environment=XIAOMI_PASSWORD=your_password
+# Environment=HERMES_API_URL=http://127.0.0.1:9222
+
+[Install]
+WantedBy=multi-user.target
