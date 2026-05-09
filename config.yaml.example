@@ -1,44 +1,79 @@
-# 小爱-Hermes 桥接配置
-# 复制为 config.yaml 后修改
+# ═══════════════════════════════════════
+# 小爱-Hermes 桥接服务 配置
+# ═══════════════════════════════════════
+#
+# 使用方式：
+#   1. 复制此文件: cp config.yaml.example config.yaml
+#   2. 修改下方配置项
+#   3. 启动: python3 main.py
+#   4. 浏览器打开 http://你的IP:8199
+#   5. 在控制台中配置小米凭证（见下方说明）
+#
+# 小米凭证配置方式（二选一）：
+#
+#   方式A（推荐）：通过 Web 控制台
+#     启动后在浏览器中填入 userId + passToken，自动获取 serviceToken
+#     获取方法：
+#       1. 打开 https://account.xiaomi.com/pass/serviceLogin?sid=micoapi
+#       2. 登录你的小米账号
+#       3. F12 → Application → Cookies → account.xiaomi.com
+#       4. 复制 userId（数字）和 passToken（V1:开头的长字符串）
+#       5. 粘贴到控制台的登录页面
+#
+#   方式B：手动写入 config.yaml（不推荐，token 会过期）
+#     直接填写下方 xiaomi_* 字段
+#
+# ─── 小米凭证 ───
+# 方式B 手动填写（从浏览器 Cookies 中获取）
+xiaomi_user_id: ""        # 数字，如 131679222
+xiaomi_pass_token: ""     # V1:开头的长字符串
+xiaomi_device_id: ""      # 可选，留空自动生成
 
-# 小米账号（也可以通过环境变量 XIAOMI_ACCOUNT / XIAOMI_PASSWORD 设置）
-account: ""
-password: ""
+# ─── 服务器地区 ───
 server_country: "cn"
 
-# 语音模式: wake(唤醒词), proxy(代理所有), silent(静默)
+# ─── 语音模式 ───
+# wake   — 唤醒词模式（默认，推荐，不影响小爱原有功能）
+# proxy  — 代理模式（拦截所有对话）
+# silent — 静默模式（不拦截，只保留主动播报）
 mode: "wake"
 
-# 唤醒词正则表达式
+# ─── 唤醒词 ───
+# 正则表达式，匹配小爱识别到的语音文本开头
+# 注意：你仍然需要先说"小爱同学"唤醒音箱，然后再说唤醒词
+# 例：说 "小爱同学，贾维斯，今天天气" → 桥接服务检测到"贾维斯" → 转发给 Hermes
 wake_word_pattern: "^(贾维斯| Jarvis)"
 
-# 对话窗口（秒）— 唤醒后持续监听的时间
+# 对话窗口（秒）— 唤醒后持续监听的时间，期间不需要再次说唤醒词
 dialog_window_seconds: 30
-
-# Hermes API（OpenAI-compatible 端点）
-hermes_api_url: "http://127.0.0.1:9222"
-hermes_api_key: ""
-hermes_model: "mimo-v2.5"
-
-# 系统提示词
-hermes_system_prompt: |
-  你正在通过真实小爱音箱实时语音对话。目标是尽快口头回答。
-  回答尽量简短自然，像在和人说话一样。
-  不要输出markdown、代码块、工具回执或流程确认，只给用户真正需要听到的内容。
 
 # 轮询间隔（毫秒）
 poll_interval_ms: 1000
 
-# 语音上下文
+# ─── LLM API（OpenAI-compatible 端点）───
+hermes_api_url: "https://token-plan-cn.xiaomimimo.com"
+hermes_api_key: ""       # 你的 API Key
+hermes_model: "mimo-v2.5"
+
+# ─── 系统提示词 ───
+# 控制 AI 的说话风格，可根据需要修改
+hermes_system_prompt: |
+  你正在通过真实小爱音箱实时语音对话。
+  目标是尽快口头回答。
+  回答尽量简短自然，像在和人说话一样。
+  不要输出markdown、代码块、工具回执或流程确认，
+  只给用户真正需要听到的内容。
+
+# ─── 语音上下文 ───
 voice_context_max_turns: 6
 voice_context_max_chars: 4000
 
-# Web 控制台
+# ─── Web 控制台 ───
 console_host: "0.0.0.0"
 console_port: 8199
 
-# 音频公开地址（用于音箱访问服务器上的音频文件）
+# ─── 音频 ───
 audio_public_base_url: ""
 
-# 调试日志
+# ─── 调试 ───
 debug_log_enabled: true

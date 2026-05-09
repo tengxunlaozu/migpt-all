@@ -1,125 +1,181 @@
-# 小爱-Hermes 桥接服务 (XiaoAi-Hermes Bridge)
+# 小爱-Hermes 桥接服务 (migpt-hermes)
 
-把小爱音箱接进 Hermes Agent，让小爱成为你的语音 Agent 入口。
-
-功能对标 [Xiaoai-Claw-Addon](https://github.com/ZhengXieGang/Xiaoai-Claw-Addon)，但使用 Python 实现，适配 Hermes Agent。
+> 把小爱音箱接入 Hermes Agent —— 对小爱说话，Hermes 回答，小爱播报。
 
 ## 功能
 
-- 🎙️ **语音对话** — 对小爱说话 → Hermes 回答 → 小爱播报
-- 🔊 **TTS 播报** — 任意文本让小爱说出来
-- 🎵 **音频播放** — 让小爱播放 URL 音频
-- ⚡ **指令执行** — 远程执行小爱语音指令
-- 🔇 **音量控制** — 远程调节音量
-- 🎯 **唤醒词拦截** — 只在检测到唤醒词时才转发
-- 🔄 **代理模式** — 拦截所有语音
-- ⏸️ **静默模式** — 只保留主动播报
-- 🌐 **Web 控制台** — 浏览器管理界面
-- 💾 **持久化配置** — 登录态、设备、配置自动保存
-- 📋 **调试日志** — 详细运行日志
+- 🎙️ 语音对话轮询 → 转发到 LLM → TTS 回播
+- 🔊 远程播报、播放音频、执行指令、调节音量
+- 🎯 唤醒词拦截 / 代理模式 / 静默模式
+- 🌐 Web 控制台管理
+- 💾 配置与登录态持久化
 
 ## 快速开始
 
+### 1. 安装依赖
+
 ```bash
-# 1. 安装依赖
-cd ~/xiaomi-hermes-bridge
+git clone https://github.com/tengxunlaozu/migpt-hermes.git
+cd migpt-hermes
 pip3 install -r requirements.txt
+```
 
-# 2. 复制配置
+### 2. 配置
+
+```bash
 cp config.yaml.example config.yaml
-# 编辑 config.yaml，填入你的 Hermes API 地址
+nano config.yaml  # 编辑 LLM API 地址和 Key
+```
 
-# 3. 启动
+**必填配置项：**
+
+```yaml
+hermes_api_url: "https://你的LLM-API地址"
+hermes_api_key: "你的API密钥"
+hermes_model: "模型名"
+```
+
+### 3. 启动
+
+```bash
 python3 main.py
-
-# 4. 打开控制台
-# 浏览器访问 http://your-server:8199
-# 登录小米账号 → 选择音箱 → 启动
 ```
 
-## 环境变量
+### 4. 浏览器登录小米账号
 
-| 变量 | 说明 |
+打开 `http://你的服务器IP:8199`
+
+**配置小米凭证（首次必须）：**
+
+1. 在控制台页面点 **"打开小米登录页"** 链接
+2. 用你的小米账号密码登录
+3. 登录成功后，按 **F12** → **Application** → **Cookies** → **account.xiaomi.com**
+4. 复制 **userId**（数字）和 **passToken**（`V1:` 开头的长字符串）
+5. 粘贴到控制台的登录表单中，点 **"保存并登录"**
+
+### 5. 选择设备 & 启动
+
+登录成功后：
+1. 在设备列表中选择你的小爱音箱
+2. 点 **"▶ 启动"** 开始轮询
+
+### 6. 测试
+
+对小爱说：**"小爱同学，贾维斯，你好"**
+
+> 必须先说"小爱同学"唤醒音箱，然后说的内容才会被桥接服务检测。
+
+## 使用说明
+
+### 日常使用
+
+```
+你说: "小爱同学，贾维斯，今天天气怎么样？"
+              ↓
+音箱识别语音 → 上传到小米云端
+              ↓
+桥接服务轮询到 → 匹配"贾维斯" → 转发给 LLM
+              ↓
+LLM 回复 → 小爱播报
+```
+
+### 语音模式
+
+| 模式 | 说明 | 日常设备控制 |
+|------|------|------|
+| **wake**（默认） | 只拦截匹配唤醒词的对话 | ✅ 不受影响 |
+| **proxy** | 拦截所有对话 | ❌ 会被拦截 |
+| **silent** | 不拦截，只保留主动播报 | ✅ 不受影响 |
+
+### 唤醒词
+
+默认匹配 `^(贾维斯| Jarvis)`，可在 `config.yaml` 中修改：
+
+```yaml
+wake_word_pattern: "^(贾维斯| Jarvis)"
+```
+
+### Web 控制台
+
+| 功能 | 操作 |
 |------|------|
-| `XIAOMI_ACCOUNT` | 小米账号 |
-| `XIAOMI_PASSWORD` | 小米密码 |
-| `HERMES_API_URL` | Hermes API 地址 (默认 http://127.0.0.1:9222) |
-| `HERMES_API_KEY` | Hermes API Key |
-| `HERMES_MODEL` | 模型名 (默认 mimo-v2.5) |
+| 登录 | 填入 userId + passToken |
+| 启动/停止 | 点按钮 |
+| 切换模式 | 唤醒/代理/静默 |
+| 播报 | 输入文字点发送 |
+| 执行指令 | 输入小爱指令 |
+| 调音量 | 输入 0-100 |
 
-## 命令行参数
+## 配置文件参考
+
+所有配置项都有注释，详见 [config.yaml.example](config.yaml.example)
+
+主要配置项：
+
+| 配置 | 说明 | 默认值 |
+|------|------|--------|
+| `hermes_api_url` | LLM API 地址 | `https://token-plan-cn.xiaomimimo.com` |
+| `hermes_api_key` | API Key | - |
+| `hermes_model` | 模型名 | `mimo-v2.5` |
+| `mode` | 语音模式 | `wake` |
+| `wake_word_pattern` | 唤醒词正则 | `^(贾维斯\| Jarvis)` |
+| `console_port` | 控制台端口 | `8199` |
+| `hermes_system_prompt` | 系统提示词 | 简短口头回答风格 |
+
+## systemd 服务
 
 ```bash
-python3 main.py                      # 正常启动
-python3 main.py --config path.yaml   # 指定配置
-python3 main.py --console-only       # 只启动控制台
-python3 main.py --port 8080          # 指定端口
-python3 main.py --verbose            # 详细日志
-```
-
-## 作为服务运行
-
-```bash
-# 复制 systemd 文件
-sudo cp xiaomi-hermes.service /etc/systemd/system/
+sudo cp migpt-hermes.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable xiaomi-hermes
-sudo systemctl start xiaomi-hermes
-
-# 查看日志
-sudo journalctl -u xiaomi-hermes -f
+sudo systemctl enable migpt-hermes
+sudo systemctl start migpt-hermes
+sudo journalctl -u migpt-hermes -f  # 查看日志
 ```
 
-## 语音模式
+## 常见问题
 
-| 模式 | 说明 |
-|------|------|
-| `wake` | 唤醒词模式 — 只在检测到唤醒词（如"贾维斯"）时转发 |
-| `proxy` | 代理模式 — 拦截所有小爱语音对话 |
-| `silent` | 静默模式 — 不拦截，只保留主动播报 |
+**Q: passToken 会过期吗？**
+A: 会。过期后需要重新从浏览器获取。通常有效期几天到几周。
 
-## 与 xiaogpt 的区别
+**Q: 云服务器能控制家里的音箱吗？**
+A: 能。通过小米云端 API 中转，不需要在同一局域网。
 
-| 特性 | 本项目 | xiaogpt |
-|------|--------|---------|
-| 小爱音箱Play增强版(L05C) | ✅ 支持 | ❌ 不支持 |
-| 唤醒词拦截 | ✅ | ❌ |
-| Web 控制台 | ✅ | ❌ |
-| 对话上下文记忆 | ✅ | ✅ |
-| 音频 URL 播放 | ✅ | ✅ |
-| 代理模式 | ✅ | ✅ |
-| MIoT Spec 自动探测 | ✅ | ❌ |
+**Q: 说"小爱同学，打开台灯"会被拦截吗？**
+A: 默认 wake 模式不会。只有"贾维斯"开头的才会被拦截。
+
+**Q: 对话历史存在哪？**
+A: 运行时在内存中（重启清空）。配置和登录态在 `~/.xiaomi-hermes-bridge/`。
 
 ## 目录结构
 
 ```
-xiaomi-hermes-bridge/
+migpt-hermes/
 ├── main.py                 # 入口
-├── xiaomi/
+├── config.yaml.example     # 配置模板
+├── requirements.txt        # 依赖
+├── migpt-hermes.service    # systemd 服务
+├── xiaomi/                 # 小米 API 客户端
 │   ├── models.py           # 数据模型
 │   ├── auth.py             # 登录认证
-│   ├── mina.py             # MiNA API (设备控制、对话轮询)
-│   └── miio.py             # MiIO API (MIoT 属性/动作)
-├── bridge/
-│   ├── hermes_client.py    # Hermes API 客户端
+│   ├── auth_portal.py      # 浏览器凭证登录
+│   ├── mina.py             # MiNA API（设备控制、对话轮询）
+│   └── miio.py             # MiIO API（MIoT 属性/动作）
+├── bridge/                 # 桥接逻辑
+│   ├── hermes_client.py    # LLM API 客户端
 │   └── poller.py           # 对话轮询器
-├── console/
-│   ├── app.py              # Web 控制台后端
-│   └── templates/
-│       └── index.html      # 控制台前端
-├── config.yaml.example     # 配置示例
-└── requirements.txt        # 依赖
+└── console/                # Web 控制台
+    ├── app.py              # FastAPI 后端
+    └── templates/
+        └── index.html      # 前端
 ```
 
-## 数据存储
-
-所有配置和状态保存在 `~/.xiaomi-hermes-bridge/`：
+## 运行时数据
 
 ```
 ~/.xiaomi-hermes-bridge/
-├── config.yaml    # 配置
-├── tokens.json    # 小米登录态
-├── device.json    # 已选设备
+├── config.yaml    # 持久化配置
+├── tokens.json    # 小米登录态（自动生成）
+├── device.json    # 已选设备（自动生成）
 └── debug.log      # 调试日志
 ```
 
