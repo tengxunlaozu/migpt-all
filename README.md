@@ -1,7 +1,7 @@
 # 小爱-Hermes 桥接服务 (migpt-hermes)
 
 > 把小爱音箱接入 Hermes Agent —— 对小爱说话，Hermes 回答，小爱播报。
-
+> **[English Version](README_EN.md)**
 ## 功能
 
 - 🎙️ 语音对话轮询 → 转发到 LLM → TTS 回播
