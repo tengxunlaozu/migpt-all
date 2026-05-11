@@ -35,8 +35,21 @@ def _sha256_base64(*parts: bytes) -> str:
     return base64.b64encode(h.digest()).decode()
 
 
+# 使用 micloud 的 RC4 签名工具
+try:
+    from micloud.miutils import (
+        gen_nonce as _gen_nonce,
+        signed_nonce as _signed_nonce,
+        generate_enc_params as _generate_enc_params,
+        decrypt_rc4 as _decrypt_rc4,
+    )
+    _HAS_MICLOUD_SIGNING = True
+except ImportError:
+    _HAS_MICLOUD_SIGNING = False
+
+
 class MiIOClient:
-    """MiIO API 客户端（MIoT 协议）"""
+    """MiIO API 客户端（MIoT 协议，RC4 加密签名）"""
 
     def __init__(self, auth, store: XiaomiTokenStore, region: str = "cn"):
         self._auth = auth
@@ -52,61 +65,60 @@ class MiIOClient:
     def close(self):
         self._http.close()
 
-    def _sign_data(self, uri: str, payload: dict) -> tuple[str, str, dict]:
-        """签名请求数据"""
-        ssecurity = self._store.xiaomiio_ssecurity
-        json_str = json.dumps(payload, separators=(",", ":"))
-
-        # 生成 nonce (8 random bytes + 4 bytes timestamp)
-        minutes_bytes = int(time.time() / 60).to_bytes(4, "big")
-        nonce = os.urandom(8) + minutes_bytes
-        nonce_b64 = base64.b64encode(nonce).decode()
-
-        # signedNonce
-        signed_nonce = _sha256_base64(
-            base64.b64decode(ssecurity),
-            base64.b64decode(nonce_b64),
-        )
-
-        # signature
-        message = f"{uri}&{signed_nonce}&{nonce_b64}&data={json_str}"
-        sig = hmac.new(
-            base64.b64decode(signed_nonce),
-            message.encode(),
-            hashlib.sha256,
-        ).hexdigest()
-
-        return nonce_b64, json_str, {
-            "_nonce": nonce_b64,
-            "data": json_str,
-            "signature": sig,
+    def _build_cookies(self) -> dict:
+        """构建 MiIO API cookies"""
+        return {
+            "userId": self._store.user_id,
+            "yetAnotherServiceToken": self._store.xiaomiio_service_token,
+            "serviceToken": self._store.xiaomiio_service_token,
+            "locale": "zh_CN",
+            "timezone": "GMT+08:00",
+            "is_daylight": "0",
+            "dst_offset": "0",
+            "channel": "MI_APP_STORE",
+            "PassportDeviceId": self._store.device_id or "",
         }
 
     def _miio_request(self, uri: str, payload: dict) -> Any:
-        """MiIO API 请求"""
-        nonce_b64, _, form_data = self._sign_data(uri, payload)
+        """MiIO API 请求（RC4 加密签名）"""
+        if not _HAS_MICLOUD_SIGNING:
+            raise Exception("需要 micloud 库: pip install micloud")
 
-        cookies = self._auth.build_miio_cookies(self._store)
+        ssecurity = self._store.xiaomiio_ssecurity
+        url = f"{self._base_url}{uri}"
+
+        # 用 RC4 加密签名
+        params = {"data": json.dumps(payload)}
+        nonce = _gen_nonce()
+        sn = _signed_nonce(ssecurity, nonce)
+        enc_params = _generate_enc_params(url, "POST", sn, nonce, params, ssecurity)
+
+        cookies = self._build_cookies()
         headers = {
             "User-Agent": (
-                "iOS-14.4-6.0.103-iPhone12,3--D7744744F7AF32F0544445285880DD63E47D9BE9"
-                "-8816080-84A3F44E137B71AE-iPhone"
+                "Android-7.1.1-1.0.0-ONEPLUS A3010-136-ABCDEF "
+                "APP/xiaomi.smarthome APPV/62830"
             ),
             "x-xiaomi-protocal-flag-cli": "PROTOCAL-HTTP2",
-            "Content-Type": "application/x-www-form-urlencoded",
+            "content-type": "application/x-www-form-urlencoded",
+            "MIOT-ENCRYPT-ALGORITHM": "ENCRYPT-RC4",
         }
 
-        resp = self._http.post(
-            f"{self._base_url}{uri}",
-            data=form_data,
-            cookies=cookies,
-            headers=headers,
-        )
+        resp = self._http.post(url, data=enc_params, cookies=cookies, headers=headers)
 
         if resp.status_code != 200:
             raise Exception(f"MiIO API {resp.status_code}: {resp.text[:200]}")
 
-        return resp.json()
+        # 响应是 RC4 加密的，需要解密
+        try:
+            decrypted = _decrypt_rc4(_signed_nonce(ssecurity, nonce), resp.text)
+            return json.loads(decrypted)
+        except Exception:
+            # 尝试直接解析 JSON（某些端点不加密）
+            try:
+                return resp.json()
+            except Exception:
+                raise Exception(f"无法解析 MiIO 响应: {resp.text[:200]}")
 
     def device_list_full(self) -> list[MiioDeviceInfo]:
         """获取完整设备列表"""

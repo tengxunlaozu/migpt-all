@@ -229,6 +229,13 @@ class VoicePoller:
         )
 
         if is_wake_triggered or is_continuous:
+            # 检查是否是退出关键词（关闭对话窗口，不拦截）
+            exit_keywords = ["退出", "再见", "拜拜", "关闭", "关机", "停止"]
+            if any(kw in query for kw in exit_keywords):
+                logger.info(f"   [退出] \"{query}\" → 关闭对话窗口")
+                self.last_dialog_window_opened_at = 0
+                return
+
             # 打开对话窗口
             self.last_dialog_window_opened_at = current_time
             logger.info(f"   [唤醒] 捕获: \"{query[:50]}\" (唤醒词: {is_wake_triggered}, 免唤醒: {is_continuous})")
@@ -262,34 +269,78 @@ class VoicePoller:
         # 投递回复
         await self._deliver_reply(reply)
 
+    def _tts_via_miio(self, text: str) -> bool:
+        """尝试通过 MIoT 协议发送 TTS（用于 MIoT 类型设备如 L05C）"""
+        if not self._miio or not self._features or not self._miot_did:
+            return False
+        try:
+            self._miio.play_text(self._miot_did, text, self._features)
+            return True
+        except Exception as e:
+            logger.debug(f"MIoT TTS 失败，回退 ubus: {e}")
+            return False
+
     async def _deliver_reply(self, text: str):
         """将回复投递到音箱"""
         if not self._mina or not self._device:
             return
 
         try:
+            # 清理 TTS 内容（去换行、markdown、emoji）
+            clean_text = self._hermes.clean_for_tts(text)
+
             # 先清空当前播放（避免残留音乐干扰）
             await asyncio.get_event_loop().run_in_executor(
                 None, lambda: self._mina.player_stop(self._device.device_id)
             )
             await asyncio.sleep(0.3)
 
-            # TTS 播报
-            await asyncio.get_event_loop().run_in_executor(
-                None, lambda: self._mina.text_to_speech(self._device.device_id, text)
+            # 优先用 MIoT 发 TTS（MIoT 设备如 L05C 不支持 ubus TTS）
+            used_miio = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: self._tts_via_miio(clean_text)
             )
-            logger.info(f"→ [TTS] \"{text[:80]}...\"")
+            if not used_miio:
+                # 回退到 ubus TTS
+                await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: self._mina.text_to_speech(self._device.device_id, clean_text)
+                )
+            logger.info(f"→ [TTS] \"{clean_text[:80]}...\"")
+
+            # TTS 播放后，异步唤醒音箱保持监听（仅 wake 模式）
+            if self.current_mode == "wake" and self._miio and self._features:
+                asyncio.create_task(self._wake_after_tts(clean_text))
+
         except Exception as e:
             logger.error(f"投递回复失败: {e}")
+
+    async def _wake_after_tts(self, text: str):
+        """TTS 播放完成后重新唤醒音箱，保持监听状态"""
+        try:
+            # 估算 TTS 时长：中文约 120ms/字，最少 2 秒，最多 15 秒
+            tts_duration = min(15.0, max(2.0, len(text) * 0.12))
+            await asyncio.sleep(tts_duration)
+
+            # 通过 MIoT wake_up 重新激活音箱
+            await asyncio.get_event_loop().run_in_executor(
+                None, lambda: self._miio.wake_up(self._miot_did, self._features)
+            )
+            logger.info(f"→ [唤醒] TTS 后重新唤醒音箱保持监听")
+        except Exception as e:
+            logger.warning(f"TTS 后唤醒失败: {e}")
 
     # === 外部控制接口 ===
 
     async def speak(self, text: str):
         """主动播报文本"""
         if self._mina and self._device:
-            await asyncio.get_event_loop().run_in_executor(
-                None, lambda: self._mina.text_to_speech(self._device.device_id, text)
+            # 优先 MIoT
+            used = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: self._tts_via_miio(text)
             )
+            if not used:
+                await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: self._mina.text_to_speech(self._device.device_id, text)
+                )
 
     async def play_audio(self, url: str):
         """播放音频URL"""

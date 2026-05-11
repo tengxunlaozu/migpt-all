@@ -9,6 +9,10 @@
 - 🎯 唤醒词拦截 / 代理模式 / 静默模式
 - 🌐 Web 控制台管理
 - 💾 配置与登录态持久化
+- 🆔 身份后处理 — 修复 LLM 模型的身份先验（如 mimo 系列）
+- 📅 日期上下文注入 — 自动将当前日期注入对话，避免 LLM 回答日期错误
+- 🔌 MIoT TTS 协议 — 支持 L05C 等 MIoT 设备的 TTS 播报
+- 🔄 连接池自愈 — 连续失败自动重建 HTTP 连接池
 
 ## 快速开始
 
@@ -89,11 +93,17 @@ LLM 回复 → 小爱播报
 
 ### 唤醒词
 
-默认匹配 `^(贾维斯| Jarvis)`，可在 `config.yaml` 中修改：
+默认匹配 `贾维斯`、`jarvis`（不区分大小写），可在 `config.yaml` 中修改：
 
 ```yaml
-wake_word_pattern: "^(贾维斯| Jarvis)"
+wake_word_pattern: "(贾维斯|jarvis|Jarvis|JARVIS)"
 ```
+
+### 退出对话
+
+在对话窗口中说以下关键词可关闭对话窗口，回到正常模式：
+
+> 退出、再见、拜拜、关闭、关机、停止
 
 ### Web 控制台
 
@@ -118,7 +128,7 @@ wake_word_pattern: "^(贾维斯| Jarvis)"
 | `hermes_api_key` | API Key | - |
 | `hermes_model` | 模型名 | `mimo-v2.5` |
 | `mode` | 语音模式 | `wake` |
-| `wake_word_pattern` | 唤醒词正则 | `^(贾维斯\| Jarvis)` |
+| `wake_word_pattern` | 唤醒词正则 | `(贾维斯\|jarvis\|Jarvis\|JARVIS)` |
 | `console_port` | 控制台端口 | `8199` |
 | `hermes_system_prompt` | 系统提示词 | 简短口头回答风格 |
 
@@ -132,19 +142,40 @@ sudo systemctl start migpt-hermes
 sudo journalctl -u migpt-hermes -f  # 查看日志
 ```
 
+## v2.1.0 更新日志
+
+### 新特性
+- **身份后处理** (`_fix_identity`): 自动将 LLM 回复中的"小爱"替换为"贾维斯"，处理否定句等边界情况（适用于 mimo 等有身份先验的模型）
+- **日期上下文注入**: 每次请求自动将当前日期时间注入 system prompt，解决 LLM 回答日期错误的问题
+- **退出关键词**: 说"退出/再见/拜拜/关闭/关机/停止"可关闭对话窗口
+- **MIoT TTS**: 支持通过 MIoT 协议发送 TTS，兼容 L05C 等不支持 ubus 的设备
+- **TTS 后唤醒**: 播报完成后自动重新唤醒音箱，保持监听状态
+- **TTS 文本清理**: 自动去除换行、markdown 标记、emoji，提升播报质量
+
+### 改进
+- **RC4 加密签名**: MiIO API 改用 micloud 库的 RC4 加密，提升兼容性
+- **连接池自愈**: 连续 3 次轮询失败后自动重建 HTTP 连接池，解决僵尸连接问题
+- **IPv4 强制**: 避免 IPv6 连接超时问题
+- **响应解析**: 修复 MiNA API 双重编码 JSON 的解析问题
+- **唤醒词匹配**: 从"仅匹配开头"改为"匹配任意位置"，支持在对话中间插入唤醒词
+- **嵌套 TTS 解析**: 修复某些设备返回嵌套 dict 格式 TTS 的解析
+
 ## 常见问题
 
 **Q: passToken 会过期吗？**
-A: 会。过期后需要重新从浏览器获取。通常有效期几天到几周。
+A: 会。过期后需要重新从浏览器获取。通常有效期几天到几周。症状：轮询返回空记录，音箱无反应。
 
 **Q: 云服务器能控制家里的音箱吗？**
 A: 能。通过小米云端 API 中转，不需要在同一局域网。
 
 **Q: 说"小爱同学，打开台灯"会被拦截吗？**
-A: 默认 wake 模式不会。只有"贾维斯"开头的才会被拦截。
+A: 默认 wake 模式不会。只有包含"贾维斯"的才会被拦截。
 
 **Q: 对话历史存在哪？**
 A: 运行时在内存中（重启清空）。配置和登录态在 `~/.xiaomi-hermes-bridge/`。
+
+**Q: L05C 设备能用吗？**
+A: 能。v2.1.0 新增了 MIoT TTS 协议支持，L05C 等设备优先使用 MIoT 播报。
 
 ## 目录结构
 
@@ -159,10 +190,10 @@ migpt-hermes/
 │   ├── auth.py             # 登录认证
 │   ├── auth_portal.py      # 浏览器凭证登录
 │   ├── mina.py             # MiNA API（设备控制、对话轮询）
-│   └── miio.py             # MiIO API（MIoT 属性/动作）
+│   └── miio.py             # MiIO API（MIoT 属性/动作，RC4 加密）
 ├── bridge/                 # 桥接逻辑
-│   ├── hermes_client.py    # LLM API 客户端
-│   └── poller.py           # 对话轮询器
+│   ├── hermes_client.py    # LLM API 客户端（身份修复、TTS 清理）
+│   └── poller.py           # 对话轮询器（退出词、MIoT TTS、唤醒）
 └── console/                # Web 控制台
     ├── app.py              # FastAPI 后端
     └── templates/

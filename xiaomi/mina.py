@@ -39,7 +39,16 @@ class MiNAClient:
     def __init__(self, auth: XiaomiAuthClient, store: XiaomiTokenStore):
         self._auth = auth
         self._store = store
-        self._http = httpx.Client(timeout=15.0)
+        self._consecutive_failures = 0
+        self._http = self._make_client()
+
+    def _make_client(self) -> httpx.Client:
+        """创建新的 httpx 客户端（强制 IPv4，避免连接池僵尸连接）"""
+        transport = httpx.HTTPTransport(
+            local_address="0.0.0.0",
+            limits=httpx.Limits(max_connections=5, max_keepalive_connections=2),
+        )
+        return httpx.Client(timeout=15.0, transport=transport)
 
     def update_tokens(self, store: XiaomiTokenStore):
         self._store = store
@@ -205,9 +214,15 @@ class MiNAClient:
             data = resp.json()
             inner = data.get("data", {})
             if isinstance(inner, str):
-                records = []
+                # API 返回双重编码的 JSON 字符串，需要二次解析
+                try:
+                    inner = json.loads(inner)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    records = []
+                else:
+                    records = inner.get("records", []) if isinstance(inner, dict) else []
             else:
-                records = inner.get("records", [])
+                records = inner.get("records", []) if isinstance(inner, dict) else []
             if not records:
                 return None
 
@@ -217,7 +232,19 @@ class MiNAClient:
 
         except Exception as e:
             logger.error(f"对话轮询失败: {e}")
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= 3:
+                logger.warning(f"连续 {self._consecutive_failures} 次失败，重建 HTTP 连接池")
+                try:
+                    self._http.close()
+                except Exception:
+                    pass
+                self._http = self._make_client()
+                self._consecutive_failures = 0
             return None
+
+        # 成功则重置计数器
+        self._consecutive_failures = 0
 
     def wake_up(self, device_id: str, data: list = None) -> Any:
         """唤醒设备"""

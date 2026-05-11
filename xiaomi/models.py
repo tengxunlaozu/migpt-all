@@ -157,7 +157,14 @@ class ConversationRecord:
         if "answers" in d and isinstance(d["answers"], list):
             for a in d["answers"]:
                 if isinstance(a, dict) and "tts" in a:
-                    answers.append(a["tts"])
+                    tts_val = a["tts"]
+                    if isinstance(tts_val, dict):
+                        # tts 是嵌套 dict: {"text": "...", ...}
+                        answers.append(tts_val.get("text", ""))
+                    elif isinstance(tts_val, str):
+                        answers.append(tts_val)
+                elif isinstance(a, dict) and "text" in a:
+                    answers.append(a["text"])
                 elif isinstance(a, str):
                     answers.append(a)
         elif "answer" in d:
@@ -208,7 +215,7 @@ class BridgeConfig:
     mode: str = "wake"
 
     # 唤醒词
-    wake_word_pattern: str = r"^(贾维斯| Jarvis)"
+    wake_word_pattern: str = r"(贾维斯|jarvis|Jarvis|JARVIS)"
 
     # 对话窗口（秒）
     dialog_window_seconds: int = 30
