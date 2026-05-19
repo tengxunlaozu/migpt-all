@@ -13,6 +13,8 @@
 - 📅 日期上下文注入 — 自动将当前日期注入对话，避免 LLM 回答日期错误
 - 🔌 MIoT TTS 协议 — 支持 L05C 等 MIoT 设备的 TTS 播报
 - 🔄 连接池自愈 — 连续失败自动重建 HTTP 连接池
+- 🔐 Token 自动刷新 — passToken 过期时自动尝试续期，减少手动操作
+- 🤖 大模型热配置 — 控制台直接修改 LLM API 地址/模型/密钥，即时生效
 
 ## 快速开始
 
@@ -114,7 +116,8 @@ wake_word_pattern: "(贾维斯|jarvis|Jarvis|JARVIS)"
 | 切换模式 | 唤醒/代理/静默 |
 | 播报 | 输入文字点发送 |
 | 执行指令 | 输入小爱指令 |
-| 调音量 | 输入 0-100 |
+| 调音量 | 输入 0-100 或点"读取"查看当前音量 |
+| 大模型配置 | 查看/修改 API 地址、模型、密钥（即时生效+持久化） |
 
 ## 配置文件参考
 
@@ -142,6 +145,25 @@ sudo systemctl start migpt-hermes
 sudo journalctl -u migpt-hermes -f  # 查看日志
 ```
 
+## v2.2.1 更新日志
+
+### 新特性
+- **Token 自动刷新**: 连续 401 达到阈值后，自动用 passToken 刷新 micoapi serviceToken，无需手动操作
+- **Token 过期检测**: 轮询前检查 token 状态，过期后自动进入退避等待，避免疯狂重试
+- **大模型热配置**: 控制台新增"大模型配置"面板，可查看/修改 API 地址、模型名称、API 密钥，运行时即时生效并自动持久化
+- **音量读取**: 新增 `GET /api/volume` 接口，支持读取音箱当前音量
+- **客户端引用修复**: 登录后自动更新 poller 的 mina/miio 客户端引用，注册 token 刷新回调
+
+### 改进
+- **MIoT TTS 防御**: serviceToken 为空时跳过 MIoT TTS 和唤醒，避免无效请求
+- **轮询异常处理**: passToken 过期相关异常进入 60 秒长等待，给用户时间重新登录
+- **音量设置反馈**: 设置音量后前端显示确认通知
+
+## v2.2.0 更新日志
+
+- **控制台安全修复**: 移除控制台 placeholder 中的真实 userId
+- **英文版文档**: 新增 README_EN.md
+
 ## v2.1.0 更新日志
 
 ### 新特性
@@ -163,7 +185,7 @@ sudo journalctl -u migpt-hermes -f  # 查看日志
 ## 常见问题
 
 **Q: passToken 会过期吗？**
-A: 会。过期后需要重新从浏览器获取。通常有效期几天到几周。症状：轮询返回空记录，音箱无反应。
+A: 会。v2.2.1 起支持自动刷新 —— 检测到连续 401 后会自动用 passToken 续期 serviceToken。但 passToken 本身也有有效期（通常几天到几周），过期后仍需手动从浏览器重新获取。症状：控制台提示"passToken 已过期"。可以通过控制台的大模型配置面板查看状态。
 
 **Q: 云服务器能控制家里的音箱吗？**
 A: 能。通过小米云端 API 中转，不需要在同一局域网。
@@ -189,7 +211,7 @@ migpt-hermes/
 │   ├── models.py           # 数据模型
 │   ├── auth.py             # 登录认证
 │   ├── auth_portal.py      # 浏览器凭证登录
-│   ├── mina.py             # MiNA API（设备控制、对话轮询）
+│   ├── mina.py             # MiNA API（设备控制、对话轮询、Token 自动刷新）
 │   └── miio.py             # MiIO API（MIoT 属性/动作，RC4 加密）
 ├── bridge/                 # 桥接逻辑
 │   ├── hermes_client.py    # LLM API 客户端（身份修复、TTS 清理）

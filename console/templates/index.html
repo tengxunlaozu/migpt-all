@@ -40,6 +40,11 @@ button:disabled{opacity:.5;cursor:not-allowed}
 #noti.e{background:#da3633;color:#fff;opacity:1}
 .help{color:#8b949e;font-size:11px;margin-top:4px;line-height:1.5}
 .help code{background:#1c2333;padding:1px 4px;border-radius:3px;color:#79c0ff;font-size:10px}
+.llm-row{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13px}
+.llm-label{color:#8b949e;min-width:60px;font-size:12px}
+.llm-val{color:#c9d1d9;font-family:monospace;font-size:12px;word-break:break-all}
+.llm-val.masked{color:#8b949e;letter-spacing:1px}
+.btn-sm{padding:3px 10px;font-size:11px;border-radius:4px}
 </style>
 </head>
 <body>
@@ -99,10 +104,36 @@ button:disabled{opacity:.5;cursor:not-allowed}
 </div>
 <div class="mt row">
 <input type="number" id="vol-t" min="0" max="100" placeholder="音量">
-<button onclick="vol()">🔊</button>
+<button onclick="vol()">🔊 设置</button>
+<button onclick="getVol()">📡 读取</button>
+<span id="vol-cur" style="color:#8b949e;font-size:12px;line-height:34px;min-width:60px"></span>
 </div>
 <button class="mt" onclick="api('POST','/api/reset_session')">🔄 重置会话</button>
 <button class="mt" onclick="api('POST','/api/logout').then(()=>location.reload())">🚪 登出</button>
+</div>
+
+<!-- LLM 大模型配置 -->
+<div class="card hidden" id="c-llm">
+<h2>🤖 大模型配置</h2>
+<div id="llm-display">
+<div class="llm-row"><span class="llm-label">厂商</span><span class="llm-val" id="llm-provider">-</span></div>
+<div class="llm-row"><span class="llm-label">模型</span><span class="llm-val" id="llm-model">-</span></div>
+<div class="llm-row"><span class="llm-label">API密钥</span><span class="llm-val masked" id="llm-key">-</span><button class="btn-sm" id="llm-key-btn" onclick="toggleLlmKey()">显示</button></div>
+<div class="llm-row"><span class="llm-label">API地址</span><span class="llm-val" id="llm-url" style="font-size:11px">-</span></div>
+</div>
+<div class="mt" style="border-top:1px solid #30363d;padding-top:10px">
+<div class="help" style="margin-bottom:6px">修改大模型配置（留空不修改）</div>
+<label>API地址</label>
+<input type="text" id="llm-edit-url" placeholder="如 https://token-plan-cn.xiaomimimo.com/v1">
+<label>模型名称</label>
+<input type="text" id="llm-edit-model" placeholder="如 mimo-v2.5">
+<label>API密钥</label>
+<input type="text" id="llm-edit-key" placeholder="新的 API 密钥">
+<div class="mt row">
+<button class="p" id="llm-save-btn" onclick="saveLlmConfig()">✅ 确认修改</button>
+<button onclick="loadLlmConfig()">🔄 刷新</button>
+</div>
+</div>
 </div>
 
 <!-- 日志 -->
@@ -136,9 +167,10 @@ async function refresh(){
     document.getElementById('c-login').classList.toggle('hidden',s.authenticated);
     document.getElementById('c-device').classList.toggle('hidden',!s.authenticated||s.device_selected);
     document.getElementById('c-ctrl').classList.toggle('hidden',!s.device_selected);
+    document.getElementById('c-llm').classList.toggle('hidden',!s.device_selected);
     document.getElementById('c-log').classList.toggle('hidden',!s.device_selected);
     if(s.authenticated&&!s.device_selected)loadDevices();
-    if(s.device_selected)showInfo(s);
+    if(s.device_selected){showInfo(s);loadLlmConfig();if(!_volLoaded){getVol();_volLoaded=true;}}
   }catch(e){console.error(e);}
 }
 
@@ -170,9 +202,70 @@ function showInfo(s){
   document.getElementById('i-err').textContent=p.last_error||'-';
 }
 
+// ─── LLM 配置 ───
+let _llmKeyFull='';
+let _volLoaded=false;
+async function loadLlmConfig(){
+  try{
+    const d=await api('GET','/api/llm_config');
+    if(!d.ok)return;
+    document.getElementById('llm-provider').textContent=d.provider||'-';
+    document.getElementById('llm-model').textContent=d.model||'-';
+    document.getElementById('llm-url').textContent=d.api_url||'-';
+    _llmKeyFull=d.api_key_full||'';
+    const keyEl=document.getElementById('llm-key');
+    keyEl.textContent=d.api_key_masked||'-';
+    keyEl.classList.add('masked');
+    document.getElementById('llm-key-btn').textContent='显示';
+  }catch(e){console.error('loadLlmConfig:',e);}
+}
+
+function toggleLlmKey(){
+  const el=document.getElementById('llm-key');
+  const btn=document.getElementById('llm-key-btn');
+  if(el.classList.contains('masked')){
+    el.textContent=_llmKeyFull||'-';
+    el.classList.remove('masked');
+    btn.textContent='隐藏';
+  }else{
+    // 重新加载脱敏
+    const k=_llmKeyFull||'';
+    if(k.length>8) el.textContent=k.slice(0,4)+'***'+k.slice(-4);
+    else if(k) el.textContent=k.slice(0,2)+'***';
+    else el.textContent='-';
+    el.classList.add('masked');
+    btn.textContent='显示';
+  }
+}
+
+async function saveLlmConfig(){
+  const url=document.getElementById('llm-edit-url').value.trim();
+  const model=document.getElementById('llm-edit-model').value.trim();
+  const key=document.getElementById('llm-edit-key').value.trim();
+  if(!url&&!model&&!key){noti('请至少填写一项','e');return;}
+  const btn=document.getElementById('llm-save-btn');
+  btn.disabled=true;
+  try{
+    const body={};
+    if(url)body.api_url=url;
+    if(model)body.model=model;
+    if(key)body.api_key=key;
+    const d=await api('POST','/api/llm_config',body);
+    noti(d.message||'已更新');
+    // 清空输入框
+    document.getElementById('llm-edit-url').value='';
+    document.getElementById('llm-edit-model').value='';
+    document.getElementById('llm-edit-key').value='';
+    // 刷新显示
+    loadLlmConfig();
+  }catch(e){noti(e.message,'e');}
+  btn.disabled=false;
+}
+
 async function speak(){const t=document.getElementById('speak-t').value;if(!t)return;try{await api('POST','/api/speak',{text:t});document.getElementById('speak-t').value='';}catch(e){noti(e.message,'e');}}
 async function exec(){const t=document.getElementById('exec-t').value;if(!t)return;try{await api('POST','/api/execute',{text:t});document.getElementById('exec-t').value='';}catch(e){noti(e.message,'e');}}
-async function vol(){const v=document.getElementById('vol-t').value;if(!v)return;try{await api('POST','/api/volume',{volume:parseInt(v)});}catch(e){noti(e.message,'e');}}
+async function vol(){const v=document.getElementById('vol-t').value;if(!v)return;try{await api('POST','/api/volume',{volume:parseInt(v)});noti('音量已设为 '+v);}catch(e){noti(e.message,'e');}}
+async function getVol(){try{const d=await api('GET','/api/volume');if(d.ok&&d.volume>=0){document.getElementById('vol-cur').textContent='当前: '+d.volume;document.getElementById('vol-t').value=d.volume;}else{document.getElementById('vol-cur').textContent='读取失败';}}catch(e){document.getElementById('vol-cur').textContent='错误';noti(e.message,'e');}}
 async function loadLog(){try{const d=await api('GET','/api/debug_log');document.getElementById('logbox').textContent=(d.lines||[]).join('');}catch(e){document.getElementById('logbox').textContent='err:'+e.message;}}
 
 refresh();setInterval(refresh,3000);

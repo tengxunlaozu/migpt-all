@@ -27,6 +27,9 @@ logger = logging.getLogger("xiaomi.mina")
 
 MINA_BASE = "https://api2.mina.mi.com"
 
+# 401 退避：连续 401 超过此阈值后，标记 passToken 过期
+MAX_401_BEFORE_TOKEN_EXPIRED = 5
+
 
 def _random_request_id() -> str:
     chars = string.ascii_lowercase + string.digits
@@ -40,6 +43,9 @@ class MiNAClient:
         self._auth = auth
         self._store = store
         self._consecutive_failures = 0
+        self._consecutive_401s = 0
+        self._token_expired = False  # passToken 过期标记
+        self._on_token_refresh = None  # 回调: (store) -> None
         self._http = self._make_client()
 
     def _make_client(self) -> httpx.Client:
@@ -52,6 +58,54 @@ class MiNAClient:
 
     def update_tokens(self, store: XiaomiTokenStore):
         self._store = store
+        self._consecutive_401s = 0
+        self._token_expired = False
+
+    @property
+    def token_expired(self) -> bool:
+        """passToken 是否已过期"""
+        return self._token_expired
+
+    def _try_refresh_token(self) -> bool:
+        """尝试用 passToken 刷新 micoapi serviceToken"""
+        if not self._store.pass_token or not self._store.user_id:
+            logger.warning("无法刷新: 缺少 passToken 或 userId")
+            self._token_expired = True
+            return False
+
+        try:
+            from .auth_portal import AuthPortal
+            import os
+            state_dir = os.path.dirname(os.path.expanduser("~/.xiaomi-hermes-bridge/tokens.json"))
+            portal = AuthPortal(state_dir)
+            result = portal.get_service_token_via_pass_token(
+                self._store.user_id,
+                self._store.pass_token,
+                self._store.device_id,
+                sid="micoapi",
+            )
+            portal.close()
+
+            if result and result.get("service_token"):
+                self._store.micoapi_service_token = result["service_token"]
+                self._store.micoapi_ssecurity = result.get("ssecurity", "")
+                self._consecutive_401s = 0
+                logger.info("micoapi serviceToken 刷新成功")
+                # 通知保存
+                if self._on_token_refresh:
+                    try:
+                        self._on_token_refresh(self._store)
+                    except Exception:
+                        pass
+                return True
+            else:
+                logger.warning("passToken 已过期 (code=70016)，需要用户重新登录")
+                self._token_expired = True
+                return False
+        except Exception as e:
+            logger.error(f"刷新 token 异常: {e}")
+            self._token_expired = True
+            return False
 
     def close(self):
         self._http.close()
@@ -63,6 +117,7 @@ class MiNAClient:
         method: str = "GET",
         device_id: str = "",
         timeout: float = 15.0,
+        _retry: bool = True,
     ) -> Any:
         """MiNA API 通用请求"""
         request_id = _random_request_id()
@@ -85,10 +140,22 @@ class MiNAClient:
             )
 
         if resp.status_code == 201 or resp.status_code == 200:
+            self._consecutive_401s = 0
             try:
                 return resp.json()
             except Exception:
                 return resp.text
+        elif resp.status_code == 401 and _retry:
+            self._consecutive_401s += 1
+            if self._consecutive_401s >= MAX_401_BEFORE_TOKEN_EXPIRED:
+                logger.warning(f"连续 {self._consecutive_401s} 次 401，尝试刷新 token...")
+                if self._try_refresh_token():
+                    # 刷新成功，重试一次
+                    return self._request(uri, data, method, device_id, timeout, _retry=False)
+                else:
+                    raise Exception("passToken 已过期，需要用户重新登录")
+            else:
+                raise Exception(f"MiNA API 401 (第 {self._consecutive_401s} 次)")
         else:
             logger.error(f"MiNA API {resp.status_code}: {resp.text[:200]}")
             raise Exception(f"MiNA API error {resp.status_code}")
@@ -207,9 +274,24 @@ class MiNAClient:
                 timeout=10.0,
             )
 
+            if resp.status_code == 401:
+                self._consecutive_401s += 1
+                if self._consecutive_401s >= MAX_401_BEFORE_TOKEN_EXPIRED:
+                    if self._consecutive_401s == MAX_401_BEFORE_TOKEN_EXPIRED:
+                        logger.warning(f"连续 {self._consecutive_401s} 次 401，尝试刷新 token...")
+                    if self._try_refresh_token():
+                        # 刷新成功，下次轮询会用新 token
+                        logger.info("token 刷新成功，下次轮询生效")
+                    else:
+                        logger.error("passToken 已过期！请通过控制台重新登录: /api/save-credentials")
+                return None
+
             if resp.status_code != 200:
                 logger.warning(f"对话轮询 HTTP {resp.status_code}")
                 return None
+
+            # 成功响应，重置 401 计数
+            self._consecutive_401s = 0
 
             data = resp.json()
             inner = data.get("data", {})

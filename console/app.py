@@ -7,12 +7,14 @@
 - 切换模式
 - 控制音量/播放
 - 调试日志
+- LLM 大模型配置
 """
 
 from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import os
 from typing import Optional
 
@@ -281,15 +283,43 @@ async def api_execute(request: Request):
     return {"ok": True}
 
 
+@app.get("/api/volume")
+async def api_get_volume():
+    """获取音箱当前音量"""
+    state = _app_state
+    poller = state.get("poller")
+    if not poller:
+        return JSONResponse({"ok": False, "error": "poller 未初始化"}, status_code=500)
+    try:
+        vol = await poller.get_volume()
+        return {"ok": True, "volume": vol}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 @app.post("/api/volume")
 async def api_volume(request: Request):
     body = await request.json()
-    volume = body.get("volume", 50)
+    volume = body.get("volume", None)
     state = _app_state
     poller = state.get("poller")
+    if not poller:
+        return JSONResponse({"ok": False, "error": "poller 未初始化"}, status_code=500)
+
+    # 如果没传音量，先读取当前音量
+    if volume is None:
+        try:
+            current = await poller.get_volume()
+            if current >= 0:
+                volume = current
+            else:
+                return JSONResponse({"ok": False, "error": "无法获取当前音量"}, status_code=500)
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
     if poller:
         await poller.set_volume(int(volume))
-    return {"ok": True}
+    return {"ok": True, "volume": int(volume)}
 
 
 @app.post("/api/reset_session")
@@ -323,3 +353,80 @@ async def api_debug_log(lines: int = 100):
         return {"ok": True, "lines": all_lines[-lines:]}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/llm_config")
+async def api_llm_config():
+    """读取当前 LLM 大模型配置（API key 脱敏）"""
+    state = _app_state
+    cfg = state.get("config")
+    if not cfg:
+        return JSONResponse({"ok": False, "error": "配置未加载"}, status_code=500)
+
+    api_key = getattr(cfg, "hermes_api_key", "") or ""
+    # 脱敏：前4 + *** + 后4
+    if len(api_key) > 8:
+        masked = api_key[:4] + "***" + api_key[-4:]
+    elif api_key:
+        masked = api_key[:2] + "***"
+    else:
+        masked = ""
+
+    # 从 URL 提取厂商域名
+    api_url = getattr(cfg, "hermes_api_url", "") or ""
+    provider = ""
+    m = re.search(r"https?://([^/]+)", api_url)
+    if m:
+        provider = m.group(1)
+
+    return {
+        "ok": True,
+        "provider": provider,
+        "api_url": api_url,
+        "model": getattr(cfg, "hermes_model", ""),
+        "api_key_masked": masked,
+        "api_key_full": api_key,
+    }
+
+
+@app.post("/api/llm_config")
+async def api_llm_config_update(request: Request):
+    """更新 LLM 大模型配置（运行时热更新 + 持久化）"""
+    body = await request.json()
+    api_url = body.get("api_url", "").strip()
+    model = body.get("model", "").strip()
+    api_key = body.get("api_key", "").strip()
+
+    state = _app_state
+    cfg = state.get("config")
+    hermes = state.get("hermes")
+    if not cfg:
+        return JSONResponse({"ok": False, "error": "配置未加载"}, status_code=500)
+
+    changed = []
+    if api_url and api_url != cfg.hermes_api_url:
+        cfg.hermes_api_url = api_url
+        if hermes:
+            hermes.api_url = api_url.rstrip("/")
+        changed.append("API地址")
+    if model and model != cfg.hermes_model:
+        cfg.hermes_model = model
+        if hermes:
+            hermes.model = model
+        changed.append("模型")
+    if api_key and api_key != cfg.hermes_api_key:
+        cfg.hermes_api_key = api_key
+        if hermes:
+            hermes.api_key = api_key
+        changed.append("API密钥")
+
+    if not changed:
+        return {"ok": True, "message": "未修改", "changed": []}
+
+    # 持久化
+    save_fn = state.get("save_config")
+    if save_fn:
+        save_fn(cfg)
+
+    logger.info(f"LLM 配置已更新: {', '.join(changed)}")
+    return {"ok": True, "message": f"已更新: {', '.join(changed)}", "changed": changed}

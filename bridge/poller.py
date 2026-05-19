@@ -124,6 +124,14 @@ class VoicePoller:
     async def _poll_loop(self):
         """轮询循环"""
         while self.running:
+            # 检查 passToken 是否过期
+            if self._mina and self._mina.token_expired:
+                self.last_error = "passToken 已过期，请通过控制台重新登录"
+                logger.error(self.last_error)
+                # 等待 60 秒后再检查（避免疯狂重试，给用户时间重新登录）
+                await asyncio.sleep(60)
+                continue
+
             cycle_start = time.time()
             try:
                 await self._poll_once()
@@ -133,6 +141,11 @@ class VoicePoller:
                 msg = str(e)
                 self.last_error = msg
                 logger.error(f"轮询异常: {msg}")
+
+                # 如果是 passToken 过期导致的异常，进入长等待
+                if "passToken" in msg and "过期" in msg:
+                    await asyncio.sleep(60)
+                    continue
 
             # 计算下次轮询间隔
             if self.running:
@@ -273,6 +286,10 @@ class VoicePoller:
         """尝试通过 MIoT 协议发送 TTS（用于 MIoT 类型设备如 L05C）"""
         if not self._miio or not self._features or not self._miot_did:
             return False
+        # 检查 xiaomiio serviceToken 是否存在
+        if not self._miio._store.xiaomiio_service_token:
+            logger.debug("跳过 MIoT TTS: xiaomiio serviceToken 为空")
+            return False
         try:
             self._miio.play_text(self._miot_did, text, self._features)
             return True
@@ -316,6 +333,19 @@ class VoicePoller:
     async def _wake_after_tts(self, text: str):
         """TTS 播放完成后重新唤醒音箱，保持监听状态"""
         try:
+            # 检查 MiIO 客户端和 token 是否可用
+            if not self._miio or not self._features:
+                return
+
+            # 检查 xiaomiio serviceToken 是否存在
+            if not self._miio._store.xiaomiio_service_token:
+                logger.debug("跳过 MIoT 唤醒: xiaomiio serviceToken 为空（未获取到）")
+                return
+
+            if not self._miot_did:
+                logger.debug("跳过 MIoT 唤醒: miot_did 为空")
+                return
+
             # 估算 TTS 时长：中文约 120ms/字，最少 2 秒，最多 15 秒
             tts_duration = min(15.0, max(2.0, len(text) * 0.12))
             await asyncio.sleep(tts_duration)
@@ -355,6 +385,17 @@ class VoicePoller:
             await asyncio.get_event_loop().run_in_executor(
                 None, lambda: self._mina.execute_text_directive(self._device.device_id, text)
             )
+
+    async def get_volume(self) -> int:
+        """获取音箱当前音量"""
+        if self._miio and self._miot_did and self._features:
+            try:
+                return await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: self._miio.get_volume(self._miot_did, self._features)
+                )
+            except Exception as e:
+                logger.warning(f"获取音量失败: {e}")
+        return -1
 
     async def set_volume(self, volume: int):
         """设置音量"""

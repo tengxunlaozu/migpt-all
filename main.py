@@ -206,12 +206,21 @@ def main():
         save_token_store(s, config.token_store_path)
         mina = MiNAClient(auth, s)
         miio = MiIOClient(auth, s, config.server_country)
+        # 注册 token 刷新回调
+        mina._on_token_refresh = save_token_callback
+        # 更新 poller 的客户端引用
+        poller._mina = mina
+        poller._miio = miio
 
     def save_device_callback(d: MinaDeviceInfo):
         save_device(d, device_path)
 
     def save_config_callback(c: BridgeConfig):
         save_config(c)
+
+    # 注册初始客户端的 token 刷新回调
+    if mina:
+        mina._on_token_refresh = save_token_callback
 
     app_state = {
         "config": config,
