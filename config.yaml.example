@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════
-# 小爱-Hermes 桥接服务 配置
+# 小爱-LLM 桥接服务 配置
 # ═══════════════════════════════════════
 #
 # 使用方式：
@@ -41,7 +41,7 @@ mode: "wake"
 # ─── 唤醒词 ───
 # 正则表达式，匹配小爱识别到的语音文本开头
 # 注意：你仍然需要先说"小爱同学"唤醒音箱，然后再说唤醒词
-# 例：说 "小爱同学，贾维斯，今天天气" → 桥接服务检测到"贾维斯" → 转发给 Hermes
+# 例：说 "小爱同学，贾维斯，今天天气" → 桥接服务检测到"贾维斯" → 转发给 LLM
 wake_word_pattern: "^(贾维斯| Jarvis)"
 
 # 对话窗口（秒）— 唤醒后持续监听的时间，期间不需要再次说唤醒词
@@ -51,13 +51,13 @@ dialog_window_seconds: 30
 poll_interval_ms: 1000
 
 # ─── LLM API（OpenAI-compatible 端点）───
-hermes_api_url: "https://token-plan-cn.xiaomimimo.com"
-hermes_api_key: ""       # 你的 API Key
-hermes_model: "mimo-v2.5"
+api_url: "https://token-plan-cn.xiaomimimo.com"
+api_key: ""       # 你的 API Key
+model: "mimo-v2.5"
 
 # ─── 系统提示词 ───
 # 控制 AI 的说话风格，可根据需要修改
-hermes_system_prompt: |
+system_prompt: |
   你正在通过真实小爱音箱实时语音对话。
   目标是尽快口头回答。
   回答尽量简短自然，像在和人说话一样。

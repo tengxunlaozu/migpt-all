@@ -1,6 +1,6 @@
-"""Hermes API 客户端
+"""LLM API 客户端
 
-通过 OpenAI-compatible API 与 Hermes 对话。
+通过 OpenAI-compatible API 与 LLM 对话。
 """
 
 from __future__ import annotations
@@ -11,11 +11,11 @@ from typing import AsyncIterator, Optional
 
 import httpx
 
-logger = logging.getLogger("bridge.hermes")
+logger = logging.getLogger("bridge.client")
 
 
-class HermesClient:
-    """Hermes OpenAI-compatible API 客户端"""
+class LLMClient:
+    """LLM OpenAI-compatible API 客户端"""
 
     def __init__(
         self,
@@ -127,14 +127,14 @@ class HermesClient:
             if len(self._conversation_history) > self.max_turns * 2:
                 self._conversation_history = self._conversation_history[-(self.max_turns * 2):]
 
-            logger.info(f"Hermes 回复 [{len(reply)}字]: {reply[:80]}...")
+            logger.info(f"LLM 回复 [{len(reply)}字]: {reply[:80]}...")
             return reply
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"Hermes API 错误 {e.response.status_code}: {e.response.text[:200]}")
+            logger.error(f"LLM API 错误 {e.response.status_code}: {e.response.text[:200]}")
             raise
         except Exception as e:
-            logger.error(f"Hermes API 请求失败: {e}")
+            logger.error(f"LLM API 请求失败: {e}")
             raise
 
     @staticmethod

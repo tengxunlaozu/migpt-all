@@ -76,7 +76,7 @@ class MiNAClient:
         try:
             from .auth_portal import AuthPortal
             import os
-            state_dir = os.path.dirname(os.path.expanduser("~/.xiaomi-hermes-bridge/tokens.json"))
+            state_dir = os.path.dirname(os.path.expanduser("~/.xiaomi-llm-bridge/tokens.json"))
             portal = AuthPortal(state_dir)
             result = portal.get_service_token_via_pass_token(
                 self._store.user_id,

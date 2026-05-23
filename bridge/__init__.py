@@ -1,3 +1,3 @@
 """桥接逻辑包"""
-from .hermes_client import HermesClient
+from .client import LLMClient
 from .poller import VoicePoller

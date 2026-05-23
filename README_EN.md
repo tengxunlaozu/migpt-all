@@ -1,6 +1,6 @@
-# XiaoAi-Hermes Bridge (migpt-hermes)
+# XiaoAi-LLM Bridge (migpt-all)
 
-> Connect your Xiaomi XiaoAi smart speaker to Hermes Agent — speak to XiaoAi, Hermes answers, XiaoAi announces.
+> Connect your Xiaomi XiaoAi smart speaker to LLM Agent — speak to XiaoAi, LLM answers, XiaoAi announces.
 
 [中文文档](README.md)
 
@@ -21,8 +21,8 @@
 ### 1. Install Dependencies
 
 ```bash
-git clone https://github.com/tengxunlaozu/migpt-hermes.git
-cd migpt-hermes
+git clone https://github.com/tengxunlaozu/migpt-all.git
+cd migpt-all
 pip3 install -r requirements.txt
 ```
 
@@ -36,9 +36,9 @@ nano config.yaml  # Edit LLM API URL and Key
 **Required settings:**
 
 ```yaml
-hermes_api_url: "https://your-llm-api-url"
-hermes_api_key: "your-api-key"
-hermes_model: "model-name"
+api_url: "https://your-llm-api-url"
+api_key: "your-api-key"
+model: "model-name"
 ```
 
 ### 3. Start
@@ -126,22 +126,22 @@ Key settings:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `hermes_api_url` | LLM API URL | `https://token-plan-cn.xiaomimimo.com` |
-| `hermes_api_key` | API Key | - |
-| `hermes_model` | Model name | `mimo-v2.5` |
+| `api_url` | LLM API URL | `https://token-plan-cn.xiaomimimo.com` |
+| `api_key` | API Key | - |
+| `model` | Model name | `mimo-v2.5` |
 | `mode` | Voice mode | `wake` |
 | `wake_word_pattern` | Wake word regex | `(贾维斯\|jarvis\|Jarvis\|JARVIS)` |
 | `console_port` | Console port | `8199` |
-| `hermes_system_prompt` | System prompt | Brief spoken-answer style |
+| `system_prompt` | System prompt | Brief spoken-answer style |
 
 ## systemd Service
 
 ```bash
-sudo cp migpt-hermes.service /etc/systemd/system/
+sudo cp migpt-all.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable migpt-hermes
-sudo systemctl start migpt-hermes
-sudo journalctl -u migpt-hermes -f  # View logs
+sudo systemctl enable migpt-all
+sudo systemctl start migpt-all
+sudo journalctl -u migpt-all -f  # View logs
 ```
 
 ## Changelog
@@ -186,7 +186,7 @@ A: Yes. Communication goes through Xiaomi's cloud API — no need to be on the s
 A: No, in wake mode only messages containing "贾维斯" (Jarvis) are intercepted.
 
 **Q: Where is conversation history stored?**
-A: In memory at runtime (cleared on restart). Configuration and login state are in `~/.xiaomi-hermes-bridge/`.
+A: In memory at runtime (cleared on restart). Configuration and login state are in `~/.xiaomi-llm-bridge/`.
 
 **Q: Does L05C work?**
 A: Yes. v2.1.0 added MIoT TTS protocol support for L05C and similar devices.
@@ -194,11 +194,11 @@ A: Yes. v2.1.0 added MIoT TTS protocol support for L05C and similar devices.
 ## Project Structure
 
 ```
-migpt-hermes/
+migpt-all/
 ├── main.py                 # Entry point
 ├── config.yaml.example     # Config template
 ├── requirements.txt        # Dependencies
-├── migpt-hermes.service    # systemd service
+├── migpt-all.service    # systemd service
 ├── xiaomi/                 # Xiaomi API clients
 │   ├── models.py           # Data models
 │   ├── auth.py             # Login authentication
@@ -206,7 +206,7 @@ migpt-hermes/
 │   ├── mina.py             # MiNA API (device control, dialog polling)
 │   └── miio.py             # MiIO API (MIoT props/actions, RC4 encryption)
 ├── bridge/                 # Bridge logic
-│   ├── hermes_client.py    # LLM API client (identity fix, TTS cleanup)
+│   ├── client.py    # LLM API client (identity fix, TTS cleanup)
 │   └── poller.py           # Dialog poller (exit words, MIoT TTS, wake)
 └── console/                # Web console
     ├── app.py              # FastAPI backend
@@ -217,7 +217,7 @@ migpt-hermes/
 ## Runtime Data
 
 ```
-~/.xiaomi-hermes-bridge/
+~/.xiaomi-llm-bridge/
 ├── config.yaml    # Persistent config
 ├── tokens.json    # Xiaomi login state (auto-generated)
 ├── device.json    # Selected device (auto-generated)

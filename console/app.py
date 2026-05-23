@@ -32,7 +32,7 @@ def set_app_state(state: dict):
     _app_state = state
 
 
-app = FastAPI(title="小爱-Hermes 桥接控制台")
+app = FastAPI(title="小爱-LLM 桥接控制台")
 
 templates_dir = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=templates_dir)
@@ -218,7 +218,7 @@ async def api_start():
             auth=state["auth"],
             mina=state["mina"],
             miio=state["miio"],
-            hermes=state["hermes"],
+            llm=state["llm"],
             device=device,
             miot_did=miot_did,
             hardware=device.hardware,
@@ -363,7 +363,7 @@ async def api_llm_config():
     if not cfg:
         return JSONResponse({"ok": False, "error": "配置未加载"}, status_code=500)
 
-    api_key = getattr(cfg, "hermes_api_key", "") or ""
+    api_key = getattr(cfg, "api_key", "") or ""
     # 脱敏：前4 + *** + 后4
     if len(api_key) > 8:
         masked = api_key[:4] + "***" + api_key[-4:]
@@ -373,7 +373,7 @@ async def api_llm_config():
         masked = ""
 
     # 从 URL 提取厂商域名
-    api_url = getattr(cfg, "hermes_api_url", "") or ""
+    api_url = getattr(cfg, "api_url", "") or ""
     provider = ""
     m = re.search(r"https?://([^/]+)", api_url)
     if m:
@@ -383,7 +383,7 @@ async def api_llm_config():
         "ok": True,
         "provider": provider,
         "api_url": api_url,
-        "model": getattr(cfg, "hermes_model", ""),
+        "model": getattr(cfg, "model", ""),
         "api_key_masked": masked,
         "api_key_full": api_key,
     }
@@ -399,25 +399,25 @@ async def api_llm_config_update(request: Request):
 
     state = _app_state
     cfg = state.get("config")
-    hermes = state.get("hermes")
+    llm = state.get("llm")
     if not cfg:
         return JSONResponse({"ok": False, "error": "配置未加载"}, status_code=500)
 
     changed = []
-    if api_url and api_url != cfg.hermes_api_url:
-        cfg.hermes_api_url = api_url
-        if hermes:
-            hermes.api_url = api_url.rstrip("/")
+    if api_url and api_url != cfg.api_url:
+        cfg.api_url = api_url
+        if llm:
+            llm.api_url = api_url.rstrip("/")
         changed.append("API地址")
-    if model and model != cfg.hermes_model:
-        cfg.hermes_model = model
-        if hermes:
-            hermes.model = model
+    if model and model != cfg.model:
+        cfg.model = model
+        if llm:
+            llm.model = model
         changed.append("模型")
-    if api_key and api_key != cfg.hermes_api_key:
-        cfg.hermes_api_key = api_key
-        if hermes:
-            hermes.api_key = api_key
+    if api_key and api_key != cfg.api_key:
+        cfg.api_key = api_key
+        if llm:
+            llm.api_key = api_key
         changed.append("API密钥")
 
     if not changed:

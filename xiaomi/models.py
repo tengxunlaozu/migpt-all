@@ -201,11 +201,11 @@ class BridgeConfig:
     # 轮询
     poll_interval_ms: int = 1000
 
-    # Hermes
-    hermes_api_url: str = "http://127.0.0.1:9222"
-    hermes_api_key: str = ""
-    hermes_model: str = "mimo-v2.5"
-    hermes_system_prompt: str = (
+    # LLM
+    api_url: str = "http://127.0.0.1:9222"
+    api_key: str = ""
+    model: str = "mimo-v2.5"
+    system_prompt: str = (
         "你正在通过真实小爱音箱实时语音对话。目标是尽快口头回答。"
         "回答尽量简短自然，像在和人说话一样。"
         "不要输出markdown、代码块、工具回执或流程确认，只给用户真正需要听到的内容。"

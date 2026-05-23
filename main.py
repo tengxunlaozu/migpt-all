@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-小爱-Hermes 桥接服务
+小爱-LLM 桥接服务
 
-把小爱音箱接进 Hermes Agent，实现：
-- 语音对话轮询 → 转发到 Hermes LLM → TTS 回播
+把小爱音箱接进 LLM Agent，实现：
+- 语音对话轮询 → 转发到 LLM LLM → TTS 回播
 - 唤醒词/代理/静默三种模式
 - Web 控制台
 - 设备控制（音量、播放、指令执行）
@@ -37,7 +37,7 @@ from xiaomi.models import BridgeConfig, XiaomiTokenStore, MinaDeviceInfo
 from xiaomi.auth import XiaomiAuthClient
 from xiaomi.mina import MiNAClient
 from xiaomi.miio import MiIOClient
-from bridge.hermes_client import HermesClient
+from bridge.client import LLMClient
 from bridge.poller import VoicePoller
 from console.app import app, set_app_state
 
@@ -65,7 +65,7 @@ def setup_logging(config: BridgeConfig, verbose: bool = False):
 # ─── 配置加载 ───
 
 def default_state_dir() -> str:
-    return os.path.join(os.path.expanduser("~"), ".xiaomi-hermes-bridge")
+    return os.path.join(os.path.expanduser("~"), ".xiaomi-llm-bridge")
 
 
 def load_config(config_path: str | None = None) -> BridgeConfig:
@@ -88,9 +88,9 @@ def load_config(config_path: str | None = None) -> BridgeConfig:
     env_map = {
         "XIAOMI_ACCOUNT": "account",
         "XIAOMI_PASSWORD": "password",
-        "HERMES_API_URL": "hermes_api_url",
-        "HERMES_API_KEY": "hermes_api_key",
-        "HERMES_MODEL": "hermes_model",
+        "LLM_API_URL": "api_url",
+        "LLM_API_KEY": "api_key",
+        "LLM_MODEL": "model",
     }
     for env_key, attr in env_map.items():
         val = os.environ.get(env_key)
@@ -153,7 +153,7 @@ def save_device(device: MinaDeviceInfo, path: str):
 # ─── 主入口 ───
 
 def main():
-    parser = argparse.ArgumentParser(description="小爱-Hermes 桥接服务")
+    parser = argparse.ArgumentParser(description="小爱-LLM 桥接服务")
     parser.add_argument("--config", "-c", help="配置文件路径")
     parser.add_argument("--console-only", action="store_true", help="只启动控制台")
     parser.add_argument("--verbose", "-v", action="store_true", help="详细日志")
@@ -169,7 +169,7 @@ def main():
     logger = logging.getLogger("main")
 
     logger.info("=" * 50)
-    logger.info("  小爱 ↔ Hermes 桥接服务")
+    logger.info("  小爱 ↔ LLM 桥接服务")
     logger.info("=" * 50)
 
     state_dir = default_state_dir()
@@ -185,11 +185,11 @@ def main():
         miio = MiIOClient(auth, store, config.server_country)
         logger.info(f"已恢复登录态 user_id={store.user_id}")
 
-    hermes = HermesClient(
-        api_url=config.hermes_api_url,
-        api_key=config.hermes_api_key,
-        model=config.hermes_model,
-        system_prompt=config.hermes_system_prompt,
+    llm = LLMClient(
+        api_url=config.api_url,
+        api_key=config.api_key,
+        model=config.model,
+        system_prompt=config.system_prompt,
         max_turns=config.voice_context_max_turns,
         max_chars=config.voice_context_max_chars,
     )
@@ -227,7 +227,7 @@ def main():
         "auth": auth,
         "mina": mina,
         "miio": miio,
-        "hermes": hermes,
+        "llm": llm,
         "store": store,
         "device": device,
         "poller": poller,
@@ -260,7 +260,7 @@ def main():
                     logger.warning(f"MIoT DID 探测失败: {e}")
 
             poller.initialize(
-                auth=auth, mina=mina, miio=miio, hermes=hermes,
+                auth=auth, mina=mina, miio=miio, llm=llm,
                 device=device, miot_did=miot_did, hardware=device.hardware,
             )
             await poller.start()
@@ -280,7 +280,7 @@ def main():
         yield
         logger.info("正在关闭...")
         await poller.stop()
-        await hermes.close()
+        await llm.close()
         auth.close()
         if mina:
             mina.close()
@@ -298,8 +298,8 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
 
     logger.info(f"控制台地址: http://{config.console_host}:{config.console_port}")
-    logger.info(f"Hermes API: {config.hermes_api_url}")
-    logger.info(f"模型: {config.hermes_model}")
+    logger.info(f"LLM API: {config.api_url}")
+    logger.info(f"模型: {config.model}")
     logger.info(f"语音模式: {config.mode}")
     logger.info(f"唤醒词: {config.wake_word_pattern}")
 

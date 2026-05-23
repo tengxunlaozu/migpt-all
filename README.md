@@ -1,6 +1,6 @@
-# 小爱-Hermes 桥接服务 (migpt-hermes)
+# 小爱-LLM 桥接服务 (migpt-all)
 
-> 把小爱音箱接入 Hermes Agent —— 对小爱说话，Hermes 回答，小爱播报。
+> 把小爱音箱接入 LLM Agent —— 对小爱说话，LLM 回答，小爱播报。
 > **[English Version](README_EN.md)**
 ## 功能
 
@@ -21,8 +21,8 @@
 ### 1. 安装依赖
 
 ```bash
-git clone https://github.com/tengxunlaozu/migpt-hermes.git
-cd migpt-hermes
+git clone https://github.com/tengxunlaozu/migpt-all.git
+cd migpt-all
 pip3 install -r requirements.txt
 ```
 
@@ -36,9 +36,9 @@ nano config.yaml  # 编辑 LLM API 地址和 Key
 **必填配置项：**
 
 ```yaml
-hermes_api_url: "https://你的LLM-API地址"
-hermes_api_key: "你的API密钥"
-hermes_model: "模型名"
+api_url: "https://你的LLM-API地址"
+api_key: "你的API密钥"
+model: "模型名"
 ```
 
 ### 3. 启动
@@ -127,22 +127,22 @@ wake_word_pattern: "(贾维斯|jarvis|Jarvis|JARVIS)"
 
 | 配置 | 说明 | 默认值 |
 |------|------|--------|
-| `hermes_api_url` | LLM API 地址 | `https://token-plan-cn.xiaomimimo.com` |
-| `hermes_api_key` | API Key | - |
-| `hermes_model` | 模型名 | `mimo-v2.5` |
+| `api_url` | LLM API 地址 | `https://token-plan-cn.xiaomimimo.com` |
+| `api_key` | API Key | - |
+| `model` | 模型名 | `mimo-v2.5` |
 | `mode` | 语音模式 | `wake` |
 | `wake_word_pattern` | 唤醒词正则 | `(贾维斯\|jarvis\|Jarvis\|JARVIS)` |
 | `console_port` | 控制台端口 | `8199` |
-| `hermes_system_prompt` | 系统提示词 | 简短口头回答风格 |
+| `system_prompt` | 系统提示词 | 简短口头回答风格 |
 
 ## systemd 服务
 
 ```bash
-sudo cp migpt-hermes.service /etc/systemd/system/
+sudo cp migpt-all.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable migpt-hermes
-sudo systemctl start migpt-hermes
-sudo journalctl -u migpt-hermes -f  # 查看日志
+sudo systemctl enable migpt-all
+sudo systemctl start migpt-all
+sudo journalctl -u migpt-all -f  # 查看日志
 ```
 
 ## v2.2.1 更新日志
@@ -194,7 +194,7 @@ A: 能。通过小米云端 API 中转，不需要在同一局域网。
 A: 默认 wake 模式不会。只有包含"贾维斯"的才会被拦截。
 
 **Q: 对话历史存在哪？**
-A: 运行时在内存中（重启清空）。配置和登录态在 `~/.xiaomi-hermes-bridge/`。
+A: 运行时在内存中（重启清空）。配置和登录态在 `~/.xiaomi-llm-bridge/`。
 
 **Q: L05C 设备能用吗？**
 A: 能。v2.1.0 新增了 MIoT TTS 协议支持，L05C 等设备优先使用 MIoT 播报。
@@ -202,11 +202,11 @@ A: 能。v2.1.0 新增了 MIoT TTS 协议支持，L05C 等设备优先使用 MIo
 ## 目录结构
 
 ```
-migpt-hermes/
+migpt-all/
 ├── main.py                 # 入口
 ├── config.yaml.example     # 配置模板
 ├── requirements.txt        # 依赖
-├── migpt-hermes.service    # systemd 服务
+├── migpt-all.service    # systemd 服务
 ├── xiaomi/                 # 小米 API 客户端
 │   ├── models.py           # 数据模型
 │   ├── auth.py             # 登录认证
@@ -214,7 +214,7 @@ migpt-hermes/
 │   ├── mina.py             # MiNA API（设备控制、对话轮询、Token 自动刷新）
 │   └── miio.py             # MiIO API（MIoT 属性/动作，RC4 加密）
 ├── bridge/                 # 桥接逻辑
-│   ├── hermes_client.py    # LLM API 客户端（身份修复、TTS 清理）
+│   ├── client.py    # LLM API 客户端（身份修复、TTS 清理）
 │   └── poller.py           # 对话轮询器（退出词、MIoT TTS、唤醒）
 └── console/                # Web 控制台
     ├── app.py              # FastAPI 后端
@@ -225,7 +225,7 @@ migpt-hermes/
 ## 运行时数据
 
 ```
-~/.xiaomi-hermes-bridge/
+~/.xiaomi-llm-bridge/
 ├── config.yaml    # 持久化配置
 ├── tokens.json    # 小米登录态（自动生成）
 ├── device.json    # 已选设备（自动生成）

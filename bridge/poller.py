@@ -5,7 +5,7 @@
 2. 检测新的语音查询
 3. 去重（时间戳 + requestId）
 4. 唤醒词/对话窗口检测
-5. 转发到 Hermes
+5. 转发到 LLM
 6. 投递回复
 """
 
@@ -22,7 +22,7 @@ from xiaomi.models import (
 from xiaomi.mina import MiNAClient
 from xiaomi.miio import MiIOClient, MiotSpecClient, pick_speaker_features
 from xiaomi.auth import XiaomiAuthClient
-from .hermes_client import HermesClient
+from .client import LLMClient
 
 logger = logging.getLogger("bridge.poller")
 
@@ -61,7 +61,7 @@ class VoicePoller:
         self._auth: XiaomiAuthClient | None = None
         self._mina: MiNAClient | None = None
         self._miio: MiIOClient | None = None
-        self._hermes: HermesClient | None = None
+        self._llm: LLMClient | None = None
         self._device: MinaDeviceInfo | None = None
         self._features: SpeakerFeatureMap | None = None
         self._miot_did: str = ""
@@ -75,7 +75,7 @@ class VoicePoller:
         auth: XiaomiAuthClient,
         mina: MiNAClient,
         miio: MiIOClient,
-        hermes: HermesClient,
+        llm: LLMClient,
         device: MinaDeviceInfo,
         miot_did: str = "",
         hardware: str = "",
@@ -84,7 +84,7 @@ class VoicePoller:
         self._auth = auth
         self._mina = mina
         self._miio = miio
-        self._hermes = hermes
+        self._llm = llm
         self._device = device
         self._miot_did = miot_did or device.miot_did
         self._hardware = hardware or device.hardware
@@ -257,9 +257,9 @@ class VoicePoller:
             logger.debug(f"   [未匹配] \"{query[:50]}\" (不在唤醒词或对话窗口内)")
 
     async def _intercept_and_forward(self, query: str):
-        """拦截查询，转发到 Hermes，投递回复"""
-        # 确保 Hermes 和音箱都就绪
-        if not self._hermes or not self._mina or not self._device:
+        """拦截查询，转发到 LLM，投递回复"""
+        # 确保 LLM 客户端和音箱都就绪
+        if not self._llm or not self._mina or not self._device:
             logger.warning("客户端未就绪，跳过")
             return
 
@@ -271,11 +271,11 @@ class VoicePoller:
         except Exception as e:
             logger.debug(f"暂停播放失败（可忽略）: {e}")
 
-        # 发送到 Hermes
+        # 发送到 LLM
         try:
-            reply = await self._hermes.chat(query)
+            reply = await self._llm.chat(query)
         except Exception as e:
-            logger.error(f"Hermes 请求失败: {e}")
+            logger.error(f"LLM 请求失败: {e}")
             reply = "抱歉，我暂时无法回答"
             self.last_error = str(e)
 
@@ -304,7 +304,7 @@ class VoicePoller:
 
         try:
             # 清理 TTS 内容（去换行、markdown、emoji）
-            clean_text = self._hermes.clean_for_tts(text)
+            clean_text = self._llm.clean_for_tts(text)
 
             # 先清空当前播放（避免残留音乐干扰）
             await asyncio.get_event_loop().run_in_executor(
@@ -415,8 +415,8 @@ class VoicePoller:
 
     def reset_voice_session(self):
         """重置语音会话"""
-        if self._hermes:
-            self._hermes.reset_conversation()
+        if self._llm:
+            self._llm.reset_conversation()
         self.last_dialog_window_opened_at = 0
         logger.info("语音会话已重置")
 
