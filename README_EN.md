@@ -146,9 +146,27 @@ sudo journalctl -u migpt-all -f  # View logs
 
 ## Changelog
 
-### v2.2.0
+## v2.2.2 Release Notes
 
-**Fix the bug**
+**Bug Fixes**
+
+## v2.2.1 Release Notes
+
+### New Features
+- **Token Auto-Renewal**: Automatically refreshes micoapi serviceToken using passToken after reaching a threshold of 401 consecutive attempts, eliminating the need for manual intervention.
+- **Token Expiry Detection**: Checks token status before polling; enters a backoff wait if expired, preventing frantic retries.
+- **Large Model Hot Configuration**: A new "Large Model Configuration" panel has been added to the console, allowing viewing/修改 API addresses, model names, and API keys, with changes taking effect instantly at runtime and being automatically persisted.
+- **Volume Reading**: A new `GET /api/volume` interface has been added, supporting reading the current volume of the speaker.
+- **Client Reference Fix**: Automatically updates the poller's mina/miio client reference after login and registers a token refresh callback.
+- 
+### Improvements
+- **MIoT TTS Defense**: Skips MIoT TTS and wake-up when serviceToken is empty, avoiding invalid requests.
+- **Polling Exception Handling**: Exceptions related to passToken expiry enter a 60-second long wait, giving users time to re-login.
+- **Volume Setting Feedback**: Displays a confirmation notification in the foreground after setting the volume.
+- 
+## v2.2.0 Release Notes
+- **Console Security Fix**: Removed real userId from placeholders in the console.
+- **English Documentation**: Added README_EN.md.
 
 ### v2.1.0
 
