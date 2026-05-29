@@ -144,6 +144,9 @@ sudo systemctl enable migpt-all
 sudo systemctl start migpt-all
 sudo journalctl -u migpt-all -f  # 查看日志
 ```
+## v2.2.1 更新日志
+
+**修复Bug**
 
 ## v2.2.1 更新日志
 
