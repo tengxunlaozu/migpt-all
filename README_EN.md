@@ -146,6 +146,10 @@ sudo journalctl -u migpt-all -f  # View logs
 
 ## Changelog
 
+### v2.2.0
+
+**Fix the bug**
+
 ### v2.1.0
 
 **New Features:**
