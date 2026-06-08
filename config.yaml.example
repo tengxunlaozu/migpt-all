@@ -25,7 +25,7 @@
 #
 # ─── 小米凭证 ───
 # 方式B 手动填写（从浏览器 Cookies 中获取）
-xiaomi_user_id: ""        # 数字，如 131679222
+xiaomi_user_id: ""        # 数字，如 12345678
 xiaomi_pass_token: ""     # V1:开头的长字符串
 xiaomi_device_id: ""      # 可选，留空自动生成
 
