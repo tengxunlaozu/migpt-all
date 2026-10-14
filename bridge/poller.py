@@ -46,8 +46,14 @@ class VoicePoller:
         # 模式
         self.current_mode: str = config.mode
 
-        # 唤醒词正则
-        self.wake_word_regex = re.compile(config.wake_word_pattern)
+        # 唤醒词正则（配置写错时回退默认值，避免整个服务启动即崩溃）
+        try:
+            self.wake_word_regex = re.compile(config.wake_word_pattern)
+        except re.error as e:
+            logger.warning(
+                f"wake_word_pattern 正则无效: {e}，回退默认唤醒词"
+            )
+            self.wake_word_regex = re.compile(r"(?i)(贾维斯|jarvis)")
 
         # 对话窗口
         self.continuous_dialog_window = config.dialog_window_seconds
@@ -69,6 +75,8 @@ class VoicePoller:
 
         # 轮询任务
         self._task: asyncio.Task | None = None
+        # 后台任务引用（防止被 GC 提前回收）
+        self._background_tasks: set[asyncio.Task] = set()
 
     def initialize(
         self,
@@ -93,9 +101,11 @@ class VoicePoller:
         if self._miot_did:
             try:
                 spec_client = MiotSpecClient()
-                spec = spec_client.get_spec(device.model) if device.model else None
-                self._features = pick_speaker_features(spec)
-                spec_client.close()
+                try:
+                    spec = spec_client.get_spec(device.model) if device.model else None
+                    self._features = pick_speaker_features(spec)
+                finally:
+                    spec_client.close()
                 logger.info(f"MIoT spec 已加载，功能映射: volume={self._features.volume}")
             except Exception as e:
                 logger.warning(f"MIoT spec 加载失败，使用默认: {e}")
@@ -119,6 +129,11 @@ class VoicePoller:
                 await self._task
             except asyncio.CancelledError:
                 pass
+            self._task = None
+        # 取消尚未完成的后台任务（如 TTS 后唤醒）
+        for task in list(self._background_tasks):
+            task.cancel()
+        self._background_tasks.clear()
         logger.info("语音轮询已停止")
 
     async def _poll_loop(self):
@@ -325,7 +340,9 @@ class VoicePoller:
 
             # TTS 播放后，异步唤醒音箱保持监听（仅 wake 模式）
             if self.current_mode == "wake" and self._miio and self._features:
-                asyncio.create_task(self._wake_after_tts(clean_text))
+                task = asyncio.create_task(self._wake_after_tts(clean_text))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
 
         except Exception as e:
             logger.error(f"投递回复失败: {e}")

@@ -84,12 +84,14 @@ async def api_save_credentials(request: Request):
 
         state_dir = state["config"].token_store_path.rsplit("/", 1)[0]
         portal = AuthPortal(state_dir)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
-        result = await loop.run_in_executor(
-            None, lambda: portal.full_login(user_id, pass_token, device_id)
-        )
-        portal.close()
+        try:
+            result = await loop.run_in_executor(
+                None, lambda: portal.full_login(user_id, pass_token, device_id)
+            )
+        finally:
+            portal.close()
 
         if not result.get("micoapi_service_token"):
             return JSONResponse(
@@ -107,15 +109,10 @@ async def api_save_credentials(request: Request):
             xiaomiio_service_token=result["xiaomiio_service_token"],
         )
 
-        state["store"] = store
+        # save_token 回调负责：持久化 token、重建 mina/miio 客户端、
+        # 同步 poller 和 app_state 引用（这里不要再另建客户端，
+        # 否则控制台和轮询器会各拿一组客户端，token 刷新后互相不同步）
         state["save_token"](store)
-
-        # 重建 MiNA 客户端
-        from xiaomi.mina import MiNAClient
-        from xiaomi.miio import MiIOClient
-        auth = state["auth"]
-        state["mina"] = MiNAClient(auth, store)
-        state["miio"] = MiIOClient(auth, store, state["config"].server_country)
 
         return {"ok": True, "user_id": store.user_id}
 
@@ -136,7 +133,7 @@ async def api_devices():
         if not mina:
             return JSONResponse({"ok": False, "error": "mina client 未初始化"}, status_code=500)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         devices = await loop.run_in_executor(None, lambda: mina.device_list())
 
         return {
@@ -166,9 +163,12 @@ async def api_select_device(request: Request):
     if not device_id:
         return JSONResponse({"ok": False, "error": "device_id 不能为空"}, status_code=400)
 
+    mina = state.get("mina")
+    if not mina:
+        return JSONResponse({"ok": False, "error": "mina client 未初始化"}, status_code=500)
+
     try:
-        mina = state.get("mina")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         devices = await loop.run_in_executor(None, lambda: mina.device_list())
 
         selected = None
@@ -196,6 +196,10 @@ async def api_start():
     if not poller:
         return JSONResponse({"ok": False, "error": "poller 未初始化"}, status_code=500)
 
+    store = state.get("store")
+    if not store or not store.is_valid() or not state.get("mina"):
+        return JSONResponse({"ok": False, "error": "请先登录小米账号"}, status_code=401)
+
     if not state.get("device"):
         return JSONResponse({"ok": False, "error": "请先选择设备"}, status_code=400)
 
@@ -205,26 +209,30 @@ async def api_start():
         miot_did = device.miot_did
         if not miot_did and miio:
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 devices = await loop.run_in_executor(None, lambda: miio.device_list_full())
                 for md in devices:
-                    if md.model and md.model in (device.model or ""):
+                    # 必须是同一个型号，旧写法用子串包含会匹配到别的设备
+                    if device.model and md.model == device.model:
                         miot_did = md.did
                         break
             except Exception:
                 pass
 
-        poller.initialize(
-            auth=state["auth"],
-            mina=state["mina"],
-            miio=state["miio"],
-            llm=state["llm"],
-            device=device,
-            miot_did=miot_did,
-            hardware=device.hardware,
+        # initialize 内部会同步请求 MIoT spec（阻塞网络），放到线程池执行
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: poller.initialize(
+                auth=state["auth"],
+                mina=state["mina"],
+                miio=state["miio"],
+                llm=state["llm"],
+                device=device,
+                miot_did=miot_did,
+                hardware=device.hardware,
+            ),
         )
 
-        loop = asyncio.get_event_loop()
         await poller.start()
 
         return {"ok": True}
@@ -262,8 +270,8 @@ async def api_mode(request: Request):
 async def api_speak(request: Request):
     body = await request.json()
     text = body.get("text", "")
-    if not text:
-        return JSONResponse({"ok": False, "error": "text 不能为空"}, status_code=400)
+    if not isinstance(text, str) or not text.strip():
+        return JSONResponse({"ok": False, "error": "text 必须是非空字符串"}, status_code=400)
 
     state = _app_state
     poller = state.get("poller")
@@ -276,6 +284,8 @@ async def api_speak(request: Request):
 async def api_execute(request: Request):
     body = await request.json()
     text = body.get("text", "")
+    if not isinstance(text, str) or not text.strip():
+        return JSONResponse({"ok": False, "error": "text 必须是非空字符串"}, status_code=400)
     state = _app_state
     poller = state.get("poller")
     if poller:
@@ -333,9 +343,32 @@ async def api_reset_session():
 
 @app.post("/api/logout")
 async def api_logout():
+    """登出：停止轮询、清空内存状态，并删除持久化的登录态/设备选择"""
     state = _app_state
+    poller = state.get("poller")
+    if poller:
+        await poller.stop()
+        # 同时清掉 poller 内部引用，否则 status 里还会显示旧设备名
+        poller._mina = None
+        poller._miio = None
+        poller._device = None
     state["store"] = None
     state["device"] = None
+    state["mina"] = None
+    state["miio"] = None
+    # 删除持久化文件，否则重启后会用旧账号自动登录，"登出"形同虚设
+    for path in (
+        getattr(state.get("config"), "token_store_path", ""),
+        os.path.join(
+            os.path.dirname(getattr(state.get("config"), "token_store_path", "") or ""),
+            "device.json",
+        ),
+    ):
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError as e:
+                logger.warning(f"删除 {path} 失败: {e}")
     return {"ok": True}
 
 

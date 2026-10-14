@@ -194,11 +194,7 @@ class MiIOClient:
         """执行文本指令"""
         features.ensure_defaults()
         f = features.execute_text_directive
-        args = [text]
-        if "silent_piid" in f:
-            # 可能需要设置静默参数
-            pass
-        self.miot_action(did, f["siid"], f["aiid"], args)
+        self.miot_action(did, f["siid"], f["aiid"], [text])
 
     def play_text(self, did: str, text: str, features: SpeakerFeatureMap):
         """播放文本（TTS）"""

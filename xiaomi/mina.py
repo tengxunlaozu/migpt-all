@@ -131,7 +131,12 @@ class MiNAClient:
                 url += f"&requestId={request_id}"
             else:
                 url += f"?requestId={request_id}"
-            resp = self._http.request(method, url, cookies=cookies, timeout=timeout)
+            # GET 请求的 data 是查询参数（如 search_music 的 query/count），
+            # 之前直接丢弃导致参数从未发出
+            params = dict(data) if data else None
+            resp = self._http.request(
+                method, url, params=params, cookies=cookies, timeout=timeout
+            )
         else:
             payload = dict(data) if data else {}
             payload["requestId"] = request_id
@@ -292,6 +297,9 @@ class MiNAClient:
 
             # 成功响应，重置 401 计数
             self._consecutive_401s = 0
+            # 成功响应，重置连续失败计数（原来这行在 return 之后，永远不会执行，
+            # 导致"连续3次失败重建连接池"变成了"累计3次失败就重建"）
+            self._consecutive_failures = 0
 
             data = resp.json()
             inner = data.get("data", {})
@@ -324,9 +332,6 @@ class MiNAClient:
                 self._http = self._make_client()
                 self._consecutive_failures = 0
             return None
-
-        # 成功则重置计数器
-        self._consecutive_failures = 0
 
     def wake_up(self, device_id: str, data: list = None) -> Any:
         """唤醒设备"""

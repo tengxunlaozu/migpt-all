@@ -33,6 +33,8 @@ cp config.yaml.example config.yaml
 nano config.yaml  # 编辑 LLM API 地址和 Key
 ```
 
+> 放在项目目录的 `config.yaml` 会被自动读取（查找顺序：`--config` 参数 > 项目目录 `config.yaml` > `~/.xiaomi-llm-bridge/config.yaml` > `~/.xiaomi-llm-bridge/state.json`）。
+
 **必填配置项：**
 
 ```yaml
@@ -98,7 +100,7 @@ LLM 回复 → 小爱播报
 默认匹配 `贾维斯`、`jarvis`（不区分大小写），可在 `config.yaml` 中修改：
 
 ```yaml
-wake_word_pattern: "(贾维斯|jarvis|Jarvis|JARVIS)"
+wake_word_pattern: "(?i)(贾维斯|jarvis|Jarvis|JARVIS)"  # (?i) = 不区分大小写
 ```
 
 ### 退出对话
@@ -138,12 +140,15 @@ wake_word_pattern: "(贾维斯|jarvis|Jarvis|JARVIS)"
 ## systemd 服务
 
 ```bash
-sudo cp migpt-all.service /etc/systemd/system/
+sudo cp xiaomi-llm.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable migpt-all
-sudo systemctl start migpt-all
-sudo journalctl -u migpt-all -f  # 查看日志
+sudo systemctl enable xiaomi-llm
+sudo systemctl start xiaomi-llm
+sudo journalctl -u xiaomi-llm -f  # 查看日志
 ```
+
+> 注意：`xiaomi-llm.service` 里的 `WorkingDirectory` / `ExecStart` 默认指向 `/root/migpt-all`，如果克隆到了别的路径，请先修改这两行。
+
 ## v2.2.2 更新日志
 
 **修复Bug**
@@ -197,7 +202,7 @@ A: 能。通过小米云端 API 中转，不需要在同一局域网。
 A: 默认 wake 模式不会。只有包含"贾维斯"的才会被拦截。
 
 **Q: 对话历史存在哪？**
-A: 运行时在内存中（重启清空）。配置和登录态在 `~/.xiaomi-llm-bridge/`。
+A: 运行时在内存中（重启清空）。配置文件查找顺序：`--config` 参数 > 项目目录 `config.yaml` > `~/.xiaomi-llm-bridge/config.yaml` > `~/.xiaomi-llm-bridge/state.json`（控制台修改会写回生效的那个文件）；登录态在 `~/.xiaomi-llm-bridge/`。
 
 **Q: L05C 设备能用吗？**
 A: 能。v2.1.0 新增了 MIoT TTS 协议支持，L05C 等设备优先使用 MIoT 播报。
@@ -209,7 +214,7 @@ migpt-all/
 ├── main.py                 # 入口
 ├── config.yaml.example     # 配置模板
 ├── requirements.txt        # 依赖
-├── migpt-all.service    # systemd 服务
+├── xiaomi-llm.service    # systemd 服务
 ├── xiaomi/                 # 小米 API 客户端
 │   ├── models.py           # 数据模型
 │   ├── auth.py             # 登录认证

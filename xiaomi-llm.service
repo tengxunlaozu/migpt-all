@@ -5,8 +5,9 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/root/xiaomi-llm-bridge
-ExecStart=/usr/bin/python3 /root/xiaomi-llm-bridge/main.py
+# 按实际克隆路径修改下面两行（README 默认克隆到 /root/migpt-all）
+WorkingDirectory=/root/migpt-all
+ExecStart=/usr/bin/python3 /root/migpt-all/main.py
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

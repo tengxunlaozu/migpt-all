@@ -33,6 +33,8 @@ cp config.yaml.example config.yaml
 nano config.yaml  # Edit LLM API URL and Key
 ```
 
+> A `config.yaml` in the project directory is picked up automatically (lookup order: `--config` > project `config.yaml` > `~/.xiaomi-llm-bridge/config.yaml` > `~/.xiaomi-llm-bridge/state.json`).
+
 **Required settings:**
 
 ```yaml
@@ -98,7 +100,7 @@ LLM responds → XiaoAi announces
 Default: matches `贾维斯` or `jarvis` (case-insensitive). Customize in `config.yaml`:
 
 ```yaml
-wake_word_pattern: "(贾维斯|jarvis|Jarvis|JARVIS)"
+wake_word_pattern: "(?i)(贾维斯|jarvis|Jarvis|JARVIS)"  # (?i) = case-insensitive
 ```
 
 ### Exit Conversation
@@ -137,12 +139,14 @@ Key settings:
 ## systemd Service
 
 ```bash
-sudo cp migpt-all.service /etc/systemd/system/
+sudo cp xiaomi-llm.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable migpt-all
-sudo systemctl start migpt-all
-sudo journalctl -u migpt-all -f  # View logs
+sudo systemctl enable xiaomi-llm
+sudo systemctl start xiaomi-llm
+sudo journalctl -u xiaomi-llm -f  # View logs
 ```
+
+> Note: `WorkingDirectory` / `ExecStart` in `xiaomi-llm.service` default to `/root/migpt-all`; edit both lines if you cloned elsewhere.
 
 ## Changelog
 
@@ -208,7 +212,7 @@ A: Yes. Communication goes through Xiaomi's cloud API — no need to be on the s
 A: No, in wake mode only messages containing "贾维斯" (Jarvis) are intercepted.
 
 **Q: Where is conversation history stored?**
-A: In memory at runtime (cleared on restart). Configuration and login state are in `~/.xiaomi-llm-bridge/`.
+A: In memory at runtime (cleared on restart). Config lookup order: `--config` > project `config.yaml` > `~/.xiaomi-llm-bridge/config.yaml` > `~/.xiaomi-llm-bridge/state.json` (console changes are written back to the file in effect); login state lives in `~/.xiaomi-llm-bridge/`.
 
 **Q: Does L05C work?**
 A: Yes. v2.1.0 added MIoT TTS protocol support for L05C and similar devices.
@@ -220,7 +224,7 @@ migpt-all/
 ├── main.py                 # Entry point
 ├── config.yaml.example     # Config template
 ├── requirements.txt        # Dependencies
-├── migpt-all.service    # systemd service
+├── xiaomi-llm.service    # systemd service
 ├── xiaomi/                 # Xiaomi API clients
 │   ├── models.py           # Data models
 │   ├── auth.py             # Login authentication

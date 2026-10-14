@@ -188,6 +188,11 @@ class BridgeConfig:
     password: str = ""
     server_country: str = "cn"
 
+    # 小米凭证（方式B：直接写在 config.yaml，见 config.yaml.example）
+    xiaomi_user_id: str = ""
+    xiaomi_pass_token: str = ""
+    xiaomi_device_id: str = ""
+
     # 设备
     hardware: str = ""           # 音箱 hardware ID
     speaker_name: str = ""      # 音箱名称
@@ -215,7 +220,7 @@ class BridgeConfig:
     mode: str = "wake"
 
     # 唤醒词
-    wake_word_pattern: str = r"(贾维斯|jarvis|Jarvis|JARVIS)"
+    wake_word_pattern: str = r"(?i)(贾维斯|jarvis|Jarvis|JARVIS)"
 
     # 对话窗口（秒）
     dialog_window_seconds: int = 30

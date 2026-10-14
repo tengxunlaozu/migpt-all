@@ -9,6 +9,11 @@
 #   4. 浏览器打开 http://你的IP:8199
 #   5. 在控制台中配置小米凭证（见下方说明）
 #
+# 配置文件查找顺序（第一个存在的生效）：
+#   --config 指定的路径 > 项目目录 config.yaml
+#   > ~/.xiaomi-llm-bridge/config.yaml > ~/.xiaomi-llm-bridge/state.json
+# 控制台里修改的配置会写回上面生效的那个文件。
+#
 # 小米凭证配置方式（二选一）：
 #
 #   方式A（推荐）：通过 Web 控制台
@@ -39,10 +44,10 @@ server_country: "cn"
 mode: "wake"
 
 # ─── 唤醒词 ───
-# 正则表达式，匹配小爱识别到的语音文本开头
+# 正则表达式，匹配语音文本中的任意位置（不区分大小写的 jarvis 也支持）
 # 注意：你仍然需要先说"小爱同学"唤醒音箱，然后再说唤醒词
 # 例：说 "小爱同学，贾维斯，今天天气" → 桥接服务检测到"贾维斯" → 转发给 LLM
-wake_word_pattern: "^(贾维斯| Jarvis)"
+wake_word_pattern: "(?i)(贾维斯|jarvis|Jarvis|JARVIS)"  # (?i) = 不区分大小写
 
 # 对话窗口（秒）— 唤醒后持续监听的时间，期间不需要再次说唤醒词
 dialog_window_seconds: 30
@@ -51,6 +56,7 @@ dialog_window_seconds: 30
 poll_interval_ms: 1000
 
 # ─── LLM API（OpenAI-compatible 端点）───
+# 三种填法都可以：https://host 、https://host/v1 、https://host/v1/chat/completions
 api_url: "https://token-plan-cn.xiaomimimo.com"
 api_key: ""       # 你的 API Key
 model: "mimo-v2.5"

@@ -36,6 +36,24 @@ class LLMClient:
         self._http = httpx.AsyncClient(timeout=120.0)
         self._conversation_history: list[dict] = []
 
+    def chat_completions_url(self) -> str:
+        """拼接 chat/completions 端点。
+
+        兼容常见填法，避免出现 /v1/v1/chat/completions 这种 404：
+        - https://host                        → https://host/v1/chat/completions
+        - https://host/v1                     → https://host/v1/chat/completions
+        - https://host/v1beta                 → https://host/v1beta/chat/completions
+        - https://host/v1/chat/completions    → 原样使用
+        （其他非常规路径前缀仍需填完整 /chat/completions 地址）
+        """
+        import re as _re
+        base = self.api_url.rstrip("/")
+        if base.endswith("/chat/completions"):
+            return base
+        if _re.search(r"/v\d+[a-z0-9]*$", base):
+            return f"{base}/chat/completions"
+        return f"{base}/v1/chat/completions"
+
     async def close(self):
         await self._http.aclose()
 
@@ -94,9 +112,12 @@ class LLMClient:
         weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
         date_info = f"当前日期: {now.strftime('%Y年%m月%d日')} {weekdays[now.weekday()]} {now.strftime('%H:%M')}"
 
-        # 在 system prompt 后面注入日期上下文
+        # 在 system prompt 后面注入日期上下文（没有 system prompt 时补一个，
+        # 否则"日期上下文注入"功能会静默失效）
         if messages and messages[0]["role"] == "system":
             messages[0]["content"] += f"\n\n{date_info}"
+        else:
+            messages.insert(0, {"role": "system", "content": date_info})
 
         payload = {
             "model": self.model,
@@ -107,7 +128,7 @@ class LLMClient:
 
         try:
             resp = await self._http.post(
-                f"{self.api_url}/v1/chat/completions",
+                self.chat_completions_url(),
                 json=payload,
                 headers=headers,
             )
@@ -159,7 +180,8 @@ class LLMClient:
         text = text.replace("我是小爱", "我是贾维斯")
         text = text.replace("小爱同学", "贾维斯")
         text = text.replace("小爱", "贾维斯")
-        text = text.replace("贾维斯贾维斯", "贾维斯")
+        # 折叠连续重复的"贾维斯"（原来只处理一次两连，三连以上会残留）
+        text = re.sub(r"(贾维斯){2,}", "贾维斯", text)
         return text
 
     @staticmethod
@@ -173,6 +195,7 @@ class LLMClient:
         # 去掉 markdown 标记
         text = re.sub(r"\*+", "", text)
         text = re.sub(r"#+\s*", "", text)
+        text = re.sub(r"[`~]", "", text)
         # 去掉 emoji
         text = re.sub(r"[\U0001F600-\U0001F9FF]", "", text)
         return text

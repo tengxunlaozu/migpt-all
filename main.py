@@ -20,9 +20,7 @@ import asyncio
 import json
 import logging
 import os
-import signal
 import sys
-import time
 from contextlib import asynccontextmanager
 
 import yaml
@@ -52,7 +50,9 @@ def setup_logging(config: BridgeConfig, verbose: bool = False):
     handlers = [logging.StreamHandler(sys.stdout)]
 
     if config.debug_log_enabled and config.debug_log_path:
-        os.makedirs(os.path.dirname(config.debug_log_path), exist_ok=True)
+        log_dir = os.path.dirname(config.debug_log_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
         fh = logging.FileHandler(config.debug_log_path, encoding="utf-8")
         fh.setLevel(logging.DEBUG)
         handlers.append(fh)
@@ -68,6 +68,29 @@ def default_state_dir() -> str:
     return os.path.join(os.path.expanduser("~"), ".xiaomi-llm-bridge")
 
 
+# 当前生效的配置文件路径（load_config 解析，save_config 写回同一文件，
+# 保证控制台修改的配置重启后仍然生效）
+_config_path: str = ""
+
+
+def resolve_config_path(config_path: str | None = None, state_dir: str | None = None) -> str:
+    state_dir = state_dir or default_state_dir()
+    if config_path:
+        return config_path
+
+    # 项目目录 config.yaml（README 快速开始创建的文件）优先，
+    # 其次是 ~/.xiaomi-llm-bridge/config.yaml，最后兼容旧版控制台保存的 state.json
+    candidates = [
+        os.path.join(PROJECT_ROOT, "config.yaml"),
+        os.path.join(state_dir, "config.yaml"),
+        os.path.join(state_dir, "state.json"),
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return os.path.join(state_dir, "config.yaml")
+
+
 def load_config(config_path: str | None = None) -> BridgeConfig:
     state_dir = default_state_dir()
     os.makedirs(state_dir, exist_ok=True)
@@ -77,13 +100,23 @@ def load_config(config_path: str | None = None) -> BridgeConfig:
     config.state_store_path = os.path.join(state_dir, "state.json")
     config.debug_log_path = os.path.join(state_dir, "debug.log")
 
-    path = config_path or os.path.join(state_dir, "config.yaml")
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
+    global _config_path
+    _config_path = resolve_config_path(config_path, state_dir)
+
+    if config_path and not os.path.exists(config_path):
+        logging.getLogger("main").warning(f"指定的配置文件不存在: {config_path}")
+
+    if os.path.exists(_config_path):
+        with open(_config_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         for k, v in data.items():
-            if hasattr(config, k) and v is not None:
-                setattr(config, k, v)
+            if hasattr(config, k):
+                if v is not None:
+                    setattr(config, k, v)
+            else:
+                logging.getLogger("main").warning(
+                    f"配置文件 {_config_path} 中的未知配置项已忽略: {k}"
+                )
 
     env_map = {
         "XIAOMI_ACCOUNT": "account",
@@ -111,8 +144,12 @@ def save_config(config: BridgeConfig):
         ):
             data[k] = v
 
-    os.makedirs(os.path.dirname(config.state_store_path), exist_ok=True)
-    with open(config.state_store_path, "w", encoding="utf-8") as f:
+    # 写回启动时读取的同一个配置文件，控制台的修改重启后才不会丢
+    path = _config_path or config.state_store_path
+    target_dir = os.path.dirname(path)
+    if target_dir:
+        os.makedirs(target_dir, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
 
 
@@ -148,6 +185,33 @@ def save_device(device: MinaDeviceInfo, path: str):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(device.raw, f, indent=2)
+
+
+def login_with_config_creds(config: BridgeConfig) -> XiaomiTokenStore | None:
+    """方式B：用 config.yaml 中的 xiaomi_user_id/xiaomi_pass_token 换取 serviceToken"""
+    from xiaomi.auth_portal import AuthPortal
+
+    portal = AuthPortal(default_state_dir())
+    try:
+        result = portal.full_login(
+            config.xiaomi_user_id,
+            config.xiaomi_pass_token,
+            config.xiaomi_device_id,
+        )
+    finally:
+        portal.close()
+
+    if not result.get("micoapi_service_token"):
+        return None
+    return XiaomiTokenStore(
+        user_id=result["user_id"],
+        pass_token=result["pass_token"],
+        device_id=result["device_id"],
+        micoapi_ssecurity=result["micoapi_ssecurity"],
+        micoapi_service_token=result["micoapi_service_token"],
+        xiaomiio_ssecurity=result["xiaomiio_ssecurity"],
+        xiaomiio_service_token=result["xiaomiio_service_token"],
+    )
 
 
 # ─── 主入口 ───
@@ -211,6 +275,11 @@ def main():
         # 更新 poller 的客户端引用
         poller._mina = mina
         poller._miio = miio
+        # 同步到控制台状态，保证控制台和轮询器用的是同一组客户端
+        # （否则 token 刷新后两边引用不一致，控制台会拿旧 token 请求）
+        app_state["store"] = s
+        app_state["mina"] = mina
+        app_state["miio"] = miio
 
     def save_device_callback(d: MinaDeviceInfo):
         save_device(d, device_path)
@@ -244,24 +313,44 @@ def main():
             logger.info("控制台模式，不自动启动轮询")
             return
 
+        # 方式B：config.yaml 里的 xiaomi_* 凭证自动登录（见 config.yaml.example）
+        if (store is None or not store.is_valid()) and config.xiaomi_user_id and config.xiaomi_pass_token:
+            logger.info("检测到 config.yaml 中的 xiaomi_* 凭证，正在换取 serviceToken...")
+            try:
+                new_store = await asyncio.get_running_loop().run_in_executor(
+                    None, login_with_config_creds, config
+                )
+                if new_store:
+                    save_token_callback(new_store)
+                    logger.info("config.yaml 凭证登录成功")
+                else:
+                    logger.warning("config.yaml 凭证登录失败（serviceToken 为空），请改用控制台登录")
+            except Exception as e:
+                logger.warning(f"config.yaml 凭证登录失败: {e}")
+            update_app_state()
+
         if store and store.is_valid() and device:
             logger.info(f"自动启动轮询: {device.name} ({device.hardware})")
             miot_did = device.miot_did
             if not miot_did and miio:
                 try:
-                    devices = await asyncio.get_event_loop().run_in_executor(
+                    devices = await asyncio.get_running_loop().run_in_executor(
                         None, lambda: miio.device_list_full()
                     )
                     for md in devices:
-                        if md.model and md.model in (device.model or ""):
+                        if device.model and md.model == device.model:
                             miot_did = md.did
                             break
                 except Exception as e:
                     logger.warning(f"MIoT DID 探测失败: {e}")
 
-            poller.initialize(
-                auth=auth, mina=mina, miio=miio, llm=llm,
-                device=device, miot_did=miot_did, hardware=device.hardware,
+            # initialize 内部会同步请求 MIoT spec（阻塞网络），放到线程池执行
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: poller.initialize(
+                    auth=auth, mina=mina, miio=miio, llm=llm,
+                    device=device, miot_did=miot_did, hardware=device.hardware,
+                ),
             )
             await poller.start()
         else:
@@ -276,9 +365,18 @@ def main():
     # FastAPI lifespan
     @asynccontextmanager
     async def lifespan(_app):
-        asyncio.create_task(auto_start())
+        # 保存引用，避免 auto_start 任务被执行器中途回收
+        startup_task = asyncio.create_task(auto_start())
         yield
         logger.info("正在关闭...")
+        if not startup_task.done():
+            startup_task.cancel()
+        try:
+            await startup_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning(f"启动任务异常退出: {e}")
         await poller.stop()
         await llm.close()
         auth.close()
@@ -288,14 +386,6 @@ def main():
             miio.close()
 
     app.router.lifespan_context = lifespan
-
-    # 优雅关闭
-    def signal_handler(sig, frame):
-        logger.info(f"收到信号 {sig}，正在关闭...")
-        asyncio.get_event_loop().call_soon_threadsafe(asyncio.get_event_loop().stop)
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
 
     logger.info(f"控制台地址: http://{config.console_host}:{config.console_port}")
     logger.info(f"LLM API: {config.api_url}")

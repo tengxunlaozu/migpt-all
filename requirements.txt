@@ -5,3 +5,5 @@ uvicorn[standard]>=0.29.0
 jinja2>=3.1.0
 python-multipart>=0.0.9
 pyyaml>=6.0
+# MiIO API 的 RC4 加密签名（MIoT TTS、音量读取、TTS 后唤醒都依赖它）
+micloud>=0.6
