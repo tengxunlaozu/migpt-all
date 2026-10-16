@@ -191,6 +191,15 @@ def login_with_config_creds(config: BridgeConfig) -> XiaomiTokenStore | None:
     """方式B：用 config.yaml 中的 xiaomi_user_id/xiaomi_pass_token 换取 serviceToken"""
     from xiaomi.auth_portal import AuthPortal
 
+    input_err = AuthPortal.validate_credentials(
+        config.xiaomi_user_id, config.xiaomi_pass_token
+    )
+    if input_err:
+        logging.getLogger("main").warning(
+            f"config.yaml 中的 xiaomi_* 凭证格式不对：{input_err}"
+        )
+        return None
+
     portal = AuthPortal(default_state_dir())
     try:
         result = portal.full_login(
@@ -202,6 +211,10 @@ def login_with_config_creds(config: BridgeConfig) -> XiaomiTokenStore | None:
         portal.close()
 
     if not result.get("micoapi_service_token"):
+        logging.getLogger("main").warning(
+            "config.yaml 凭证换取 serviceToken 失败："
+            f"{portal.last_error or '未知原因'}"
+        )
         return None
     return XiaomiTokenStore(
         user_id=result["user_id"],
@@ -248,6 +261,16 @@ def main():
         mina = MiNAClient(auth, store)
         miio = MiIOClient(auth, store, config.server_country)
         logger.info(f"已恢复登录态 user_id={store.user_id}")
+
+    # 凭证串位检查：小米 passToken 是 V1: 开头，Atria 的 API Key 是 atr_ 开头，
+    # 两个字段填反/填串是实际发生过的错误，早点提醒比等 LLM 401 好
+    if config.api_key and config.api_key.strip().upper().startswith("V1:"):
+        hint = (
+            "（Atria 的 key 是 atr_ 开头，见 api.atria-asi.ai/docs）"
+            if "atria-asi.ai" in (config.api_url or "")
+            else ""
+        )
+        logger.warning(f"api_key 以 V1: 开头，看起来是小米 passToken 而不是 LLM API Key{hint}")
 
     llm = LLMClient(
         api_url=config.api_url,

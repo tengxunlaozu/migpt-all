@@ -82,6 +82,11 @@ async def api_save_credentials(request: Request):
         from xiaomi.auth_portal import AuthPortal
         from xiaomi.models import XiaomiTokenStore
 
+        # 先做输入校验：格式不对就直接说明问题，不要拿去请求小米换 70016
+        input_err = AuthPortal.validate_credentials(user_id, pass_token)
+        if input_err:
+            return JSONResponse({"ok": False, "error": input_err}, status_code=400)
+
         state_dir = state["config"].token_store_path.rsplit("/", 1)[0]
         portal = AuthPortal(state_dir)
         loop = asyncio.get_running_loop()
@@ -94,8 +99,16 @@ async def api_save_credentials(request: Request):
             portal.close()
 
         if not result.get("micoapi_service_token"):
+            reason = portal.last_error or "未知原因"
             return JSONResponse(
-                {"ok": False, "error": "获取 micoapi serviceToken 失败，请检查 passToken 是否正确"},
+                {
+                    "ok": False,
+                    "error": (
+                        f"获取 micoapi serviceToken 失败：{reason}。"
+                        "请到 account.xiaomi.com 重新复制 userId/passToken（不要退出登录），"
+                        "并确认填的是小米账号 cookie 而不是 LLM 的 API Key"
+                    ),
+                },
                 status_code=400,
             )
 

@@ -37,9 +37,32 @@ class AuthPortal:
     def __init__(self, state_dir: str):
         self.state_dir = state_dir
         self._http = httpx.Client(timeout=20, follow_redirects=True)
+        # 最近一次失败的真实原因（小米返回的 code/description 等），
+        # 供控制台/启动日志展示，避免只报"请检查 passToken 是否正确"这种猜测
+        self.last_error: str = ""
 
     def close(self):
         self._http.close()
+
+    @staticmethod
+    def validate_credentials(user_id: str, pass_token: str) -> str:
+        """返回空串表示通过，否则返回具体的输入错误说明"""
+        user_id = (user_id or "").strip()
+        pass_token = (pass_token or "").strip()
+        if not user_id or not pass_token:
+            return "userId 和 passToken 都不能为空"
+        if not user_id.isdigit():
+            return (
+                f"userId 必须是纯数字（account.xiaomi.com 的 userId cookie），"
+                f"当前值以 {user_id[:6]!r} 开头、长度 {len(user_id)}"
+            )
+        if not pass_token.upper().startswith("V1:"):
+            return (
+                "passToken 格式不对：应为 V1: 开头的长字符串"
+                f"（当前长度 {len(pass_token)}，开头 {pass_token[:6]!r}）——"
+                "通常是从别的地方复制错了，例如把 LLM 的 API Key 粘进来了"
+            )
+        return ""
 
     def start_login(self, sid: str = "micoapi") -> dict:
         """
@@ -115,13 +138,15 @@ class AuthPortal:
                 "User-Agent": MOBILE_UA,
             })
 
-            # 带 passToken cookies 访问 serviceLogin
+            # 带 passToken cookies 访问 serviceLogin（空值不要发，
+            # 否则会带上 deviceId= 这种空 cookie 干扰校验）
             cookies = {
                 "sdkVersion": "3.9",
                 "deviceId": device_id,
                 "userId": user_id,
                 "passToken": pass_token,
             }
+            cookies = {k: v for k, v in cookies.items() if v}
 
             resp = http.get(
                 f"https://account.xiaomi.com/pass/serviceLogin?sid={sid}&_json=true",
@@ -133,7 +158,12 @@ class AuthPortal:
             auth = json.loads(text)
 
             if auth.get("code") != 0:
-                logger.warning(f"serviceLogin with passToken failed: code={auth.get('code')}")
+                self.last_error = (
+                    f"serviceLogin(sid={sid}) 返回 code={auth.get('code')} "
+                    f"{auth.get('description', '')}"
+                    "（70016 = 小米不认这对 userId+passToken：已过期/被登出/不是同一账号）"
+                )
+                logger.warning(self.last_error)
                 # 尝试直接 POST serviceLoginAuth2
                 return self._try_auth2_fallback(user_id, pass_token, device_id, sid)
 
@@ -142,7 +172,8 @@ class AuthPortal:
             location = auth.get("location", "")
 
             if not ssecurity or not location:
-                logger.warning(f"缺少 ssecurity 或 location")
+                self.last_error = f"serviceLogin 响应缺少 ssecurity/location（code={auth.get('code')}）"
+                logger.warning(self.last_error)
                 return self._try_auth2_fallback(user_id, pass_token, device_id, sid)
 
             # 计算 clientSign
@@ -175,6 +206,7 @@ class AuthPortal:
 
             if service_token:
                 logger.info(f"获取到 {sid} serviceToken: {service_token[:20]}...")
+                self.last_error = ""
                 return {
                     "user_id": user_id,
                     "pass_token": pass_token,
@@ -184,11 +216,13 @@ class AuthPortal:
                     "sid": sid,
                 }
 
-            logger.warning("未能获取 serviceToken")
+            self.last_error = f"已拿到 ssecurity 但没有换到 {sid} serviceToken（location 返回里无 Set-Cookie）"
+            logger.warning(self.last_error)
             return None
 
         except Exception as e:
-            logger.error(f"获取 serviceToken 失败: {e}")
+            self.last_error = f"换取 serviceToken 异常: {e}"
+            logger.error(self.last_error)
             return None
 
     def _try_auth2_fallback(
@@ -243,7 +277,9 @@ class AuthPortal:
             location = result.get("location", "")
 
             if not ssecurity or not location:
-                logger.warning(f"auth2 fallback 失败: code={result.get('code')}")
+                detail = f"auth2 fallback 也失败: code={result.get('code')} {result.get('description','')}"
+                self.last_error = f"{self.last_error}；{detail}" if self.last_error else detail
+                logger.warning(detail)
                 return None
 
             # 获取 serviceToken
@@ -267,6 +303,7 @@ class AuthPortal:
             http.close()
 
             if service_token:
+                self.last_error = ""
                 return {
                     "user_id": user_id,
                     "pass_token": pass_token,
@@ -275,22 +312,35 @@ class AuthPortal:
                     "service_token": service_token,
                     "sid": sid,
                 }
+            if not self.last_error:
+                self.last_error = f"auth2 fallback 换到了 ssecurity 但没有 {sid} serviceToken"
             return None
 
         except Exception as e:
-            logger.error(f"auth2 fallback 异常: {e}")
+            detail = f"auth2 fallback 异常: {e}"
+            self.last_error = f"{self.last_error}；{detail}" if self.last_error else detail
+            logger.error(detail)
             return None
 
     def full_login(self, user_id: str, pass_token: str, device_id: str) -> dict:
         """
         完整登录：获取 micoapi 和 xiaomiio 的 serviceToken
         """
+        self.last_error = ""
         micoapi = self.get_service_token_via_pass_token(
             user_id, pass_token, device_id, "micoapi"
         )
+        # micoapi 才是控制台判定成败的那一个：它的失败原因不能被
+        # 后面 xiaomiio 的尝试覆盖掉
+        micoapi_error = self.last_error
+        self.last_error = ""
         xiaomiio = self.get_service_token_via_pass_token(
             user_id, pass_token, device_id, "xiaomiio"
         )
+        if micoapi is None and micoapi_error:
+            self.last_error = micoapi_error
+        elif micoapi is not None:
+            self.last_error = ""
 
         return {
             "user_id": user_id,
