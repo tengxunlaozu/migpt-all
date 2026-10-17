@@ -147,6 +147,11 @@ class AuthPortal:
                 "passToken": pass_token,
             }
             cookies = {k: v for k, v in cookies.items() if v}
+            # 只记 cookie 名和长度，不记值——出问题时能一眼看出是不是漏带了 deviceId
+            logger.info(
+                f"serviceLogin(sid={sid}) 带的 cookie: "
+                + ", ".join(f"{k}({len(v)}位)" for k, v in cookies.items())
+            )
 
             resp = http.get(
                 f"https://account.xiaomi.com/pass/serviceLogin?sid={sid}&_json=true",
