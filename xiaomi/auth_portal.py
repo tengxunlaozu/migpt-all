@@ -121,6 +121,51 @@ class AuthPortal:
             "device_id": device_id,
         }
 
+    def _service_login(self, http: httpx.Client, sid: str, cookies: dict) -> dict:
+        """GET serviceLogin，返回解析后的 JSON（去掉 &&&START&&& 前缀）"""
+        resp = http.get(
+            f"https://account.xiaomi.com/pass/serviceLogin?sid={sid}&_json=true",
+            cookies=cookies,
+        )
+        text = resp.text
+        if text.startswith("&&&START&&&"):
+            text = text[11:]
+        return json.loads(text)
+
+    @staticmethod
+    def _client_sign(nonce: str, ssecurity: str) -> str:
+        raw = base64.b64encode(
+            hashlib.sha1(f"nonce={nonce}&{ssecurity}".encode()).digest()
+        ).decode()
+        # query 里的 '+' 会被服务端按空格解码，签名立刻失效（实测 STS 直接 401）；
+        # '/' 和 '=' 在 query 值里是安全的，不动它们，避免影响本来就能通的写法
+        return raw.replace("+", "%2B")
+
+    def _mint_service_token(self, location: str, nonce: str, ssecurity: str) -> tuple[str, int]:
+        """GET <location>&clientSign=<sign> 换 serviceToken。
+
+        location 是一次性的：同一 URL 再次请求会 401，所以失败要重新
+        serviceLogin 拿新 location，而不是原地重发。
+        用独立 client、跟随重定向——不带上一步 serviceLogin 留下的 cookie。
+        返回 (service_token, HTTP状态码)。
+        """
+        sep = "&" if "?" in location else "?"
+        url = f"{location}{sep}clientSign={self._client_sign(nonce, ssecurity)}"
+        with httpx.Client(
+            timeout=20, follow_redirects=True, headers={"User-Agent": MOBILE_UA}
+        ) as s:
+            r = s.get(url, follow_redirects=True)
+            token = ""
+            for c in s.cookies.jar:
+                if c.name == "serviceToken":
+                    token = c.value or ""
+                    break
+            if not token:
+                set_cookie = r.headers.get("set-cookie", "")
+                if "serviceToken=" in set_cookie:
+                    token = set_cookie.split("serviceToken=")[1].split(";")[0] or ""
+            return token, r.status_code
+
     def get_service_token_via_pass_token(
         self,
         user_id: str,
@@ -153,14 +198,7 @@ class AuthPortal:
                 + ", ".join(f"{k}({len(v)}位)" for k, v in cookies.items())
             )
 
-            resp = http.get(
-                f"https://account.xiaomi.com/pass/serviceLogin?sid={sid}&_json=true",
-                cookies=cookies,
-            )
-            text = resp.text
-            if text.startswith("&&&START&&&"):
-                text = text[11:]
-            auth = json.loads(text)
+            auth = self._service_login(http, sid, cookies)
 
             if auth.get("code") != 0:
                 self.last_error = (
@@ -169,6 +207,10 @@ class AuthPortal:
                     "（70016 = 小米不认这对 userId+passToken：已过期/被登出/不是同一账号）"
                 )
                 logger.warning(self.last_error)
+                if auth.get("code") == 70016:
+                    # 同一对凭证换个接口再试不会变好，而 auth2 这一发
+                    # 正是触发 87001 验证码风控的那一发——直接停手
+                    return None
                 # 尝试直接 POST serviceLoginAuth2
                 return self._try_auth2_fallback(user_id, pass_token, device_id, sid)
 
@@ -181,31 +223,35 @@ class AuthPortal:
                 logger.warning(self.last_error)
                 return self._try_auth2_fallback(user_id, pass_token, device_id, sid)
 
-            # 计算 clientSign
-            nsec = f"nonce={nonce}&{ssecurity}"
-            client_sign = base64.b64encode(
-                hashlib.sha1(nsec.encode()).digest()
-            ).decode()
-
-            # 跟随 location + clientSign 获取 serviceToken
-            sep = "&" if "?" in location else "?"
-            full_url = f"{location}{sep}clientSign={client_sign}"
-
-            resp2 = http.get(full_url, follow_redirects=False)
-
-            # 从 cookie jar 提取 serviceToken
+            # location 是一次性的（同一 URL 再请求直接 401），所以失败时
+            # 重新 serviceLogin 换一张新 location 再试，最多两次
             service_token = ""
-            for c in http.cookies.jar:
-                if c.name == "serviceToken":
-                    service_token = c.value
+            last_status = None
+            for attempt in (1, 2):
+                if attempt > 1:
+                    logger.info(f"重取新的 {sid} location 再试（第 {attempt} 次）")
+                    auth = self._service_login(http, sid, cookies)
+                    if auth.get("code") != 0:
+                        self.last_error = (
+                            f"重试时 serviceLogin(sid={sid}) 返回 code={auth.get('code')} "
+                            f"{auth.get('description', '')}"
+                        )
+                        logger.warning(self.last_error)
+                        break
+                    ssecurity = auth.get("ssecurity", "")
+                    nonce = auth.get("nonce", "")
+                    location = auth.get("location", "")
+                    if not ssecurity or not location:
+                        break
+                service_token, last_status = self._mint_service_token(
+                    location, nonce, ssecurity
+                )
+                if service_token:
                     break
-
-            # 备用：从 set-cookie header 提取
-            if not service_token:
-                set_cookie = resp2.headers.get("set-cookie", "")
-                if "serviceToken=" in set_cookie:
-                    part = set_cookie.split("serviceToken=")[1]
-                    service_token = part.split(";")[0]
+                logger.warning(
+                    f"第 {attempt} 次换 {sid} serviceToken 失败："
+                    f"STS 返回 HTTP {last_status}、无 Set-Cookie"
+                )
 
             http.close()
 
@@ -221,7 +267,10 @@ class AuthPortal:
                     "sid": sid,
                 }
 
-            self.last_error = f"已拿到 ssecurity 但没有换到 {sid} serviceToken（location 返回里无 Set-Cookie）"
+            self.last_error = (
+                f"已拿到 ssecurity 但没换到 {sid} serviceToken：location 接口返回 "
+                f"HTTP {last_status}、无 Set-Cookie（已重取 location 重试 2 次）"
+            )
             logger.warning(self.last_error)
             return None
 
@@ -240,14 +289,16 @@ class AuthPortal:
             })
 
             # 先获取 _sign
+            ck = {
+                "userId": user_id,
+                "passToken": pass_token,
+                "deviceId": device_id,
+            }
+            ck = {k: v for k, v in ck.items() if v}
             resp1 = http.get(
                 "https://account.xiaomi.com/pass/serviceLogin",
                 params={"sid": sid, "_json": "true"},
-                cookies={
-                    "userId": user_id,
-                    "passToken": pass_token,
-                    "deviceId": device_id,
-                },
+                cookies=ck,
             )
             t1 = resp1.text
             if t1.startswith("&&&START&&&"):
@@ -267,11 +318,7 @@ class AuthPortal:
                     "_parset": "true",
                     # 不传 hash，用 passToken cookie 认证
                 },
-                cookies={
-                    "userId": user_id,
-                    "passToken": pass_token,
-                    "deviceId": device_id,
-                },
+                cookies=ck,
             )
             t2 = resp2.text
             if t2.startswith("&&&START&&&"):
@@ -287,26 +334,11 @@ class AuthPortal:
                 logger.warning(detail)
                 return None
 
-            # 获取 serviceToken
-            nsec = f"nonce={result.get('nonce','')}&{ssecurity}"
-            client_sign = base64.b64encode(
-                hashlib.sha1(nsec.encode()).digest()
-            ).decode()
-            sep = "&" if "?" in location else "?"
-            resp3 = http.get(f"{location}{sep}clientSign={client_sign}", follow_redirects=False)
-
-            service_token = ""
-            for c in http.cookies.jar:
-                if c.name == "serviceToken":
-                    service_token = c.value
-                    break
-            if not service_token:
-                set_cookie = resp3.headers.get("set-cookie", "")
-                if "serviceToken=" in set_cookie:
-                    service_token = set_cookie.split("serviceToken=")[1].split(";")[0]
-
+            # 获取 serviceToken（同一个 helper：签名里 '+' 要转义、独立 client、跟随重定向）
+            service_token, status = self._mint_service_token(
+                location, result.get("nonce", ""), ssecurity
+            )
             http.close()
-
             if service_token:
                 self.last_error = ""
                 return {
@@ -318,7 +350,9 @@ class AuthPortal:
                     "sid": sid,
                 }
             if not self.last_error:
-                self.last_error = f"auth2 fallback 换到了 ssecurity 但没有 {sid} serviceToken"
+                self.last_error = (
+                    f"auth2 fallback 换到了 ssecurity，但 STS 返回 HTTP {status}、无 serviceToken"
+                )
             return None
 
         except Exception as e:
